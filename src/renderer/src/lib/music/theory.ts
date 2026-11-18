@@ -1,0 +1,446 @@
+import type { NoteEvent } from '../../../../shared/ipc';
+import type { MeterId } from '../../../../shared/meters';
+import { anchorBeat, beatGrid, constantGrid } from './tempo';
+
+const SHARP_NAMES = ['c', 'c#', 'd', 'd#', 'e', 'f', 'f#', 'g', 'g#', 'a', 'a#', 'b'];
+
+/** alphaTex pitch name, e.g. 64 → "e4" (scientific pitch notation, middle C = c4). */
+export function alphaTexPitch(midi: number): string {
+  return `${SHARP_NAMES[midi % 12]}${Math.floor(midi / 12) - 1}`;
+}
+
+export interface Key {
+  /** Pitch class of the tonic, 0 = C. */
+  tonic: number;
+  mode: 'major' | 'minor';
+  /** Display name, e.g. "E minor". */
+  name: string;
+  /** alphaTex key signature argument, e.g. "eminor". */
+  alphaTex: string;
+  /** Whether the key signature uses flats, so chord names should too. */
+  flats: boolean;
+}
+
+// Conventional spellings: the ones with the fewest accidentals in their key signature.
+const MAJOR_NAMES = ['C', 'D♭', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+const MINOR_NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'B♭', 'B'];
+
+// Krumhansl–Kessler key profiles.
+const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+
+function correlation(a: number[], b: number[]): number {
+  const mean = (xs: number[]) => xs.reduce((s, x) => s + x, 0) / xs.length;
+  const ma = mean(a);
+  const mb = mean(b);
+  let num = 0;
+  let da = 0;
+  let db = 0;
+  for (let i = 0; i < a.length; i++) {
+    num += (a[i] - ma) * (b[i] - mb);
+    da += (a[i] - ma) ** 2;
+    db += (b[i] - mb) ** 2;
+  }
+  return da === 0 || db === 0 ? 0 : num / Math.sqrt(da * db);
+}
+
+export function makeKey(tonic: number, mode: 'major' | 'minor'): Key {
+  const name = (mode === 'major' ? MAJOR_NAMES : MINOR_NAMES)[tonic];
+  const ascii = name.replace('♭', 'b').replace('♯', '#').toLowerCase();
+  // Sharps in the key signature, by going around the circle of fifths (from the relative major).
+  const sharps = (((mode === 'major' ? tonic : tonic + 3) % 12) * 7) % 12;
+  return { tonic, mode, name: `${name} ${mode}`, alphaTex: mode === 'major' ? ascii : `${ascii}minor`, flats: sharps > 6 };
+}
+
+/** Krumhansl–Schmuckler key finding over a duration- and loudness-weighted pitch-class histogram. */
+export function detectKey(notes: NoteEvent[]): Key {
+  const histogram = new Array<number>(12).fill(0);
+  for (const note of notes) histogram[note.pitch % 12] += note.duration * note.velocity;
+  // A piece usually starts and ends on its tonic chord: its bass names the tonic and its third the
+  // mode. That settles keys that share most of their notes (A minor and D major or A major, when an
+  // F# chord rings long in the middle), as a listener hears the first and last chords.
+  const chordNear = (from: number, to: number) => {
+    const inside = notes.filter((n) => n.start >= from && n.start <= to);
+    if (inside.length === 0) return null;
+    const bass = Math.min(...inside.map((n) => n.pitch)) % 12;
+    const classes = new Set(inside.map((n) => (n.pitch - bass + 12) % 12));
+    return { bass, minor: classes.has(3) && !classes.has(4), major: classes.has(4) && !classes.has(3) };
+  };
+  const first = notes.length ? Math.min(...notes.map((n) => n.start)) : 0;
+  const last = notes.length ? Math.max(...notes.map((n) => n.start)) : 0;
+  const ends = [chordNear(first, first + 1.5), chordNear(last - 2, last)];
+  // The cadence: the bass before the final chord a fifth above it (E → A, dominant → tonic).
+  const ending = ends[1];
+  const lastBasses = notes.filter((n) => n.start >= last - 6 && n.start < last - 0.1 && ending && n.pitch % 12 !== ending.bass).sort((a, b) => a.start - b.start);
+  const lowest = lastBasses.length ? Math.min(...lastBasses.map((n) => n.pitch)) : null;
+  const approach = lowest === null ? null : lastBasses.filter((n) => n.pitch <= lowest + 7).at(-1)!.pitch % 12;
+  const cadence = ending !== null && approach === (ending.bass + 7) % 12;
+  const tonicBonus = (tonic: number, mode: 'major' | 'minor') =>
+    ends.reduce((sum, chord) => sum + (chord && chord.bass === tonic && !(mode === 'major' ? chord.minor : chord.major) ? 0.15 : 0), 0) +
+    (cadence && ending.bass === tonic && !(mode === 'major' ? ending.minor : ending.major) ? 0.15 : 0);
+
+  let best = makeKey(0, 'major');
+  let bestScore = -Infinity;
+  for (let tonic = 0; tonic < 12; tonic++) {
+    const rotated = histogram.map((_, i) => histogram[(i + tonic) % 12]);
+    for (const mode of ['major', 'minor'] as const) {
+      const score =
+        correlation(rotated, mode === 'major' ? MAJOR_PROFILE : MINOR_PROFILE) + tonicBonus(tonic, mode);
+      if (score > bestScore) {
+        bestScore = score;
+        best = makeKey(tonic, mode);
+      }
+    }
+  }
+  return best;
+}
+
+export interface TempoEstimate {
+  bpm: number;
+  /** Time in seconds of a beat, used to align the quantization grid. */
+  offset: number;
+}
+
+const MIN_BPM = 60;
+const MAX_BPM = 180;
+
+interface Onset {
+  time: number;
+  /** Sum of the velocities. */
+  weight: number;
+  notes: NoteEvent[];
+}
+
+/** Groups near-simultaneous onsets (chords) into one weighted onset. */
+function mergeOnsets(notes: NoteEvent[]): Onset[] {
+  const onsets: Onset[] = [];
+  for (const note of [...notes].sort((a, b) => a.start - b.start)) {
+    const last = onsets[onsets.length - 1];
+    if (last && note.start - last.time < 0.03) {
+      last.weight += note.velocity;
+      last.notes.push(note);
+    } else onsets.push({ time: note.start, weight: note.velocity, notes: [note] });
+  }
+  return onsets;
+}
+
+/**
+ * Onsets weighted as accents: a note in the low register (a bass note) and a long note (one that
+ * rings for a beat or more) are heard as stronger than a short note in the middle of an arpeggio.
+ */
+function accented(onsets: Onset[], period: number): Onset[] {
+  const basses = onsets.map((o) => Math.min(...o.notes.map((n) => n.pitch))).sort((a, b) => a - b);
+  const lowRegister = Math.min(basses[Math.floor(basses.length * 0.2)], basses[Math.floor(basses.length / 2)] - 1);
+  // Only a bass under other parts, not a bass line played alone.
+  const layered = basses.filter((b) => b >= lowRegister + 12).length >= basses.length * 0.3 || onsets.some((o) => o.notes.length > 1);
+  return onsets.map((onset) => {
+    const bass = layered && Math.min(...onset.notes.map((n) => n.pitch)) <= lowRegister ? 1 : 0;
+    const length = Math.min(1, Math.max(...onset.notes.map((n) => n.duration)) / (2 * period));
+    return { ...onset, weight: onset.weight * (1 + bass + length) };
+  });
+}
+
+/** How consistently onsets fall on a grid of this period (0..1), and the grid's phase. */
+function alignment(onsets: Onset[], period: number): { magnitude: number; phase: number } {
+  let re = 0;
+  let im = 0;
+  let total = 0;
+  for (const { time, weight } of onsets) {
+    const angle = (2 * Math.PI * time) / period;
+    re += weight * Math.cos(angle);
+    im += weight * Math.sin(angle);
+    total += weight;
+  }
+  return { magnitude: total === 0 ? 0 : Math.hypot(re, im) / total, phase: Math.atan2(im, re) };
+}
+
+/**
+ * Estimates the tempo by testing how well note onsets line up with a grid of each candidate period
+ * and its subdivisions (phase-invariant: the magnitude of the onsets' mean phase vector), weighted by
+ * a prior around 110 BPM to break ties between a tempo and its double. Half/double-tempo mistakes
+ * remain possible, which is why the UI lets the user halve, double or type the tempo.
+ */
+/**
+ * Detects a beat made of three evenly spaced notes (an arpeggio in triplets or in compound time),
+ * which the periodicity search reads as straight 8ths at 3/2 of the tempo. The notes' pitches decide:
+ * when the pattern repeats every three notes rather than every two, the beat is three notes long,
+ * and it falls on the note of each group with the highest top or the lowest bass.
+ */
+function compoundBeat(onsets: Onset[], bpm: number): TempoEstimate | null {
+  const eighth = 30 / bpm;
+  if (onsets.length < 18 || alignment(onsets, eighth).magnitude < 0.85) return null;
+  // Consecutive onsets one 8th apart, as a sequence of (top, bass) pitches.
+  const tops = onsets.map((o) => Math.max(...o.notes.map((n) => n.pitch)));
+  const basses = onsets.map((o) => Math.min(...o.notes.map((n) => n.pitch)));
+  const repeats = (lag: number) => {
+    let same = 0;
+    let total = 0;
+    for (let i = 0; i + lag < onsets.length; i++) {
+      if (Math.abs(onsets[i + lag].time - onsets[i].time - lag * eighth) > eighth / 3) continue;
+      total++;
+      if (tops[i + lag] === tops[i]) same++;
+    }
+    return total < 12 ? 0 : same / total;
+  };
+  const three = repeats(3);
+  if (three < 0.6 || three < repeats(2) + 0.3 || three < repeats(4) + 0.2) return null;
+
+  // Which note of each group is on the beat: count, for each position in the group, how often it
+  // holds the group's highest top or lowest bass.
+  const period = 3 * eighth;
+  const origin = onsets[0].time;
+  const votes = [0, 0, 0];
+  for (let i = 0; i + 2 < onsets.length; i += 1) {
+    const group = [i, i + 1, i + 2];
+    if (Math.abs(onsets[i + 2].time - onsets[i].time - 2 * eighth) > eighth / 3) continue;
+    const position = (k: number) => ((Math.round((onsets[k].time - origin) / eighth) % 3) + 3) % 3;
+    const top = group.reduce((a, b) => (tops[b] > tops[a] ? b : a));
+    const bass = group.reduce((a, b) => (basses[b] < basses[a] ? b : a));
+    votes[position(top)]++;
+    votes[position(bass)]++;
+  }
+  const beatPosition = votes.indexOf(Math.max(...votes));
+  const offset = (((origin + beatPosition * eighth) % period) + period) % period;
+  return { bpm: Math.round((bpm * 2) / 3 * 10) / 10, offset };
+}
+
+export function estimateTempo(notes: NoteEvent[]): TempoEstimate {
+  const onsets = mergeOnsets(notes);
+  if (onsets.length < 4) return { bpm: 120, offset: onsets[0]?.time ?? 0 };
+
+  const score = (bpm: number) => {
+    const period = 60 / bpm;
+    // Listeners tend to hear the beat around 110 BPM (log-normal prior, σ = half an octave).
+    const prior = Math.exp(-0.5 * (Math.log2(bpm / 110) / 0.5) ** 2);
+    const fit =
+      alignment(onsets, period).magnitude + 0.5 * alignment(onsets, period / 2).magnitude + 0.25 * alignment(onsets, period / 4).magnitude;
+    return fit * prior;
+  };
+
+  let bestBpm = 120;
+  let bestScore = -Infinity;
+  for (let bpm = MIN_BPM; bpm <= MAX_BPM; bpm += 0.5) {
+    const s = score(bpm);
+    if (s > bestScore) [bestBpm, bestScore] = [bpm, s];
+  }
+  // Refine around the coarse maximum.
+  for (let bpm = bestBpm - 0.5; bpm <= bestBpm + 0.5; bpm += 0.05) {
+    const s = score(bpm);
+    if (s > bestScore) [bestBpm, bestScore] = [bpm, s];
+  }
+
+  // Notes grouped in threes (triplets, compound time) can also be heard as straight 8ths at 3/2 of
+  // the tempo; see compoundBeat.
+  const compound = compoundBeat(onsets, bestBpm);
+  if (compound) return compound;
+  const beatOnsets = onsets;
+
+  const bpm = Math.round(bestBpm * 10) / 10;
+  const period = 60 / bpm;
+  // Where the beats fall: in an even stream of 8ths, beats and off-beats are alike in loudness;
+  // a listener puts the beat on the bass notes and on the notes that ring longest.
+  const phase = alignment(accented(beatOnsets, period), period).phase;
+  const offset = ((((phase / (2 * Math.PI)) * period) % period) + period) % period;
+  return { bpm, offset };
+}
+
+/** Like alignment(), on a grid that may change tempo: how well onsets fit `divisions` per beat. */
+function alignmentOnGrid(onsets: Onset[], toBeat: (t: number) => number, divisions: number): { magnitude: number; phase: number } {
+  let re = 0;
+  let im = 0;
+  let total = 0;
+  for (const { time, weight } of onsets) {
+    const angle = 2 * Math.PI * divisions * toBeat(time);
+    re += weight * Math.cos(angle);
+    im += weight * Math.sin(angle);
+    total += weight;
+  }
+  return { magnitude: total === 0 ? 0 : Math.hypot(re, im) / total, phase: Math.atan2(im, re) };
+}
+
+export interface MeterEstimate {
+  meter: MeterId;
+  /** Which beat (0-based from the beat at or before the first note) is a downbeat. */
+  barPhase: number;
+  /** Beat offset refined on the subdivision grid (off-beat notes can pull the tempo's offset). */
+  offset: number;
+}
+
+/**
+ * Guesses the meter from the notes, conservatively (4/4 unless the evidence is clear):
+ * - triplet feel when the notes fit a grid of beat thirds (swing, shuffle) and not one of quarters;
+ * - 3/4 when accents (loud onsets, bass notes) repeat every three beats rather than every four.
+ * It also returns where the downbeats are, so bar lines fall on the accents.
+ */
+export function detectMeter(notes: NoteEvent[], tempo: TempoEstimate, beatTimes?: number[]): MeterEstimate {
+  const onsets = mergeOnsets(notes);
+  const fallback: MeterEstimate = { meter: '4/4', barPhase: 0, offset: tempo.offset };
+  if (onsets.length < 12) return fallback;
+  const period = 60 / tempo.bpm;
+
+  const tracked = beatTimes && beatTimes.length >= 2 ? beatGrid(beatTimes) : null;
+
+  // Subdivision: a straight grid (8ths, 16ths) and a triplet grid cannot both fit off-beat notes.
+  const thirds = tracked ? alignmentOnGrid(onsets, tracked.toBeat, 3) : alignment(onsets, period / 3);
+  const quarters = tracked ? alignmentOnGrid(onsets, tracked.toBeat, 4) : alignment(onsets, period / 4);
+  const triplets = thirds.magnitude > 0.75 && thirds.magnitude > quarters.magnitude + 0.25;
+
+  // Refine the beat offset: the subdivision grid position closest to the estimated beat.
+  const sub = triplets ? period / 3 : period / 4;
+  const subOffset = (((((triplets ? thirds : quarters).phase / (2 * Math.PI)) * sub) % sub) + sub) % sub;
+  let offset = tempo.offset;
+  let bestDistance = Infinity;
+  for (let k = 0; !tracked && k * sub < period; k++) {
+    const candidate = subOffset + k * sub;
+    const d = Math.abs(candidate - tempo.offset);
+    const distance = Math.min(d, period - d);
+    if (distance < bestDistance) [offset, bestDistance] = [candidate, distance];
+  }
+
+  // Accent per beat: the loudest note, plus a bonus for a note in the low register (bass notes mark
+  // downbeats, as in "oom-pah-pah"). Simultaneous strummed notes do not add up: they are one stroke.
+  const bassOf = (onset: Onset) => Math.min(...onset.notes.map((n) => n.pitch));
+  const basses = onsets.map(bassOf).sort((x, y) => x - y);
+  const lowRegister = Math.min(basses[Math.floor(basses.length * 0.2)], basses[Math.floor(basses.length / 2)] - 1);
+  const grid = tracked ?? constantGrid(tempo.bpm, offset);
+  const origin = anchorBeat(grid, onsets[0].time);
+  const strength = new Map<number, number>();
+  for (const onset of onsets) {
+    const position = grid.toBeat(onset.time) - origin;
+    const beat = Math.round(position);
+    if (Math.abs(position - beat) > 0.15) continue;
+    const accent = Math.max(...onset.notes.map((n) => n.velocity)) + (bassOf(onset) <= lowRegister ? 1 : 0);
+    strength.set(beat, Math.max(strength.get(beat) ?? 0, accent));
+  }
+  const beats = Array.from({ length: Math.max(...strength.keys()) + 1 }, (_, i) => strength.get(i) ?? 0);
+  const mean = (values: number[]) => values.reduce((sum, v) => sum + v, 0) / values.length;
+  const average = mean(beats);
+  const straight: MeterEstimate = { meter: triplets ? '4/4-triplets' : '4/4', barPhase: 0, offset };
+  if (beats.length < 12 || average === 0) return straight;
+
+  // For each grouping, the best downbeat position and how much stronger those beats are than average.
+  const accent = (beatsPerBar: number) => {
+    let best = { phase: 0, ratio: 0 };
+    for (let phase = 0; phase < beatsPerBar; phase++) {
+      const ratio = mean(beats.filter((_, i) => i % beatsPerBar === phase)) / average;
+      if (ratio > best.ratio) best = { phase, ratio };
+    }
+    return best;
+  };
+  const three = accent(3);
+  const four = accent(4);
+  if (three.ratio > 1.3 && three.ratio > four.ratio * 1.15) return { meter: triplets ? '3/4-triplets' : '3/4', barPhase: three.phase, offset };
+  return { ...straight, barPhase: four.ratio > 1.2 ? four.phase : 0 };
+}
+
+const CHORD_TYPES: [suffix: string, intervals: number[]][] = [
+  ['', [0, 4, 7]],
+  ['m', [0, 3, 7]],
+  ['7', [0, 4, 7, 10]],
+  ['maj7', [0, 4, 7, 11]],
+  ['m7', [0, 3, 7, 10]],
+  ['6', [0, 4, 7, 9]],
+  ['m6', [0, 3, 7, 9]],
+  ['sus4', [0, 5, 7]],
+  ['sus2', [0, 2, 7]],
+  ['add9', [0, 2, 4, 7]],
+  ['madd9', [0, 2, 3, 7]],
+  ['dim', [0, 3, 6]],
+  ['aug', [0, 4, 8]],
+  ['5', [0, 7]],
+];
+/**
+ * Names the harmony of a passage from how long each pitch class sounds (weights[pc]), the way a
+ * musician hears the chord behind an arpeggio or a melody: the chord whose tones cover the most
+ * sounding time, non-chord tones (passing notes) counting against it. Added tones (7, 6, add9, sus)
+ * count only when they sound together with other notes (`together`: the time each pitch class sounds
+ * in a chord), so a melody passing through them keeps the plain triad; a sus chord needs the third
+ * to be missing. The bass helps choose the root. Returns null when no chord explains at least 75%.
+ */
+export interface Harmony {
+  root: number;
+  suffix: string;
+  intervals: number[];
+  /** Pitch class of the bass when it is not the root (a slash chord), else null. */
+  bass: number | null;
+}
+
+/** The chord's name, e.g. "Am", "G7", "C/G". */
+export function formatChord(chord: Harmony, flats = false): string {
+  const roots = flats ? FLAT_ROOTS : SHARP_ROOTS;
+  return roots[chord.root] + chord.suffix + (chord.bass === null ? '' : `/${roots[chord.bass]}`);
+}
+
+/** Intervals of a chord type by its suffix ("" major, "m", "7"…). */
+export function chordIntervals(suffix: string): number[] | undefined {
+  return CHORD_TYPES.find(([s]) => s === suffix)?.[1];
+}
+
+export function harmony(weights: number[], bass: number, withBass = true, together: number[] = weights): Harmony | null {
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  if (total === 0) return null;
+  const present = (pc: number, share: number) => weights[((pc % 12) + 12) % 12] >= total * share;
+  if (weights.filter((w) => w >= total * 0.05).length < 2) return null;
+
+  let best: { chord: Harmony; score: number; covered: number } | null = null;
+  for (let root = 0; root < 12; root++) {
+    if (!present(root, 0.08)) continue;
+    CHORD_TYPES.forEach(([suffix, intervals], order) => {
+      const tones = intervals.map((i) => (root + i) % 12);
+      // Every tone but the fifth must be heard.
+      if (!tones.every((t, k) => intervals[k] === 7 || present(t, 0.04))) return;
+      // Added tones (beyond root, third and fifth) must sound within chords, clearly.
+      const added = intervals.filter((i) => ![0, 3, 4, 7].includes(i));
+      if (added.some((i) => together[(root + i) % 12] < total * 0.12)) return;
+      // Sus chords only when no third is heard at all; power chords when nothing but root and fifth is.
+      if (suffix.startsWith('sus') && (present(root + 3, 0.04) || present(root + 4, 0.04))) return;
+      if (suffix === '5' && weights.some((w, pc) => w >= total * 0.04 && pc !== root && pc !== (root + 7) % 12)) return;
+      const covered = tones.reduce((sum, t) => sum + weights[t], 0);
+      const score = covered - 0.8 * (total - covered) - 0.02 * total * order + (root === bass ? 0.15 * total : 0);
+      if (!best || score > best.score) {
+        best = { chord: { root, suffix, intervals, bass: withBass && bass >= 0 && bass !== root ? bass : null }, score, covered };
+      }
+    });
+  }
+  const found = best as { chord: Harmony; covered: number } | null;
+  return found && found.covered >= total * 0.75 ? found.chord : null;
+}
+
+export function harmonyName(weights: number[], bass: number, flats = false, withBass = true, together: number[] = weights): string | null {
+  const found = harmony(weights, bass, withBass, together);
+  return found ? formatChord(found, flats) : null;
+}
+
+const SHARP_ROOTS = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const FLAT_ROOTS = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
+
+/**
+ * Names the chord formed by some pitches (e.g. "Am", "G7", "C/G"), or null when they do not form a
+ * recognizable chord. Every note must belong to the chord; the fifth may be missing.
+ */
+export function chordName(pitches: number[], flats = false, withBass = true): string | null {
+  const classes = new Set(pitches.map((p) => ((p % 12) + 12) % 12));
+  if (classes.size < 2) return null;
+  // Without a bass (re-entrant ukulele tuning: the lowest pitch is not on the lowest string), chords
+  // are named by their root only.
+  const bass = withBass ? ((Math.min(...pitches) % 12) + 12) % 12 : -1;
+  const roots = flats ? FLAT_ROOTS : SHARP_ROOTS;
+
+  let best: { name: string; score: number } | null = null;
+  for (const root of classes) {
+    CHORD_TYPES.forEach(([suffix, intervals], order) => {
+      const tones = intervals.map((i) => (root + i) % 12);
+      if ([...classes].some((c) => !tones.includes(c))) return;
+      const missing = tones.filter((t) => !classes.has(t));
+      const fifth = (root + 7) % 12;
+      if (missing.some((t) => t !== fifth) || (missing.length > 0 && intervals.length < 3)) return;
+      // Prefer complete chords, chords in root position, then the simpler chord types.
+      const score = (missing.length === 0 ? 100 : 0) + (root === bass ? 50 : 0) - order;
+      if (!best || score > best.score) {
+        const name = roots[root] + suffix;
+        best = { name: root === bass || bass < 0 ? name : `${name}/${roots[bass]}`, score };
+      }
+    });
+  }
+  return best ? (best as { name: string }).name : null;
+}

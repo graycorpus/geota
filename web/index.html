@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>弦谱 · 吉他扒谱</title>
+    <link rel="icon" href="data:,">
+  </head>
+  <body>
+    <main class="workspace">
+      <aside class="sidebar">
+        <header class="brand">
+          <span class="brand-mark" aria-hidden="true">♪</span>
+          <span>弦谱</span>
+        </header>
+        <section class="input-panel" aria-labelledby="upload-heading">
+          <h1 id="upload-heading">吉他扒谱</h1>
+          <p class="intro">上传一段吉他录音，生成可以阅读的六线谱。</p>
+          <form id="upload-form">
+            <label class="file-drop" for="audio-file">
+              <span class="upload-icon" aria-hidden="true">↑</span>
+              <strong id="file-label">选择 MP3 或拖到这里</strong>
+              <span class="file-limit">单个文件 · 最多 25 MiB</span>
+              <input id="audio-file" name="audio" type="file" accept=".mp3,audio/mpeg">
+            </label>
+            <button class="primary" id="generate" type="submit" disabled>生成吉他谱</button>
+          </form>
+          <div class="feedback">
+            <p id="status" role="status"></p>
+            <progress id="progress" max="1" aria-label="当前阶段进度" hidden></progress>
+            <p id="error" role="alert" hidden></p>
+          </div>
+          <section class="audio-section" id="audio-section" aria-labelledby="audio-heading" hidden>
+            <h2 id="audio-heading">原始录音</h2>
+            <audio id="original-audio" controls preload="metadata" aria-label="原始录音"></audio>
+          </section>
+        </section>
+      </aside>
+      <section class="score-pane" aria-labelledby="score-heading">
+        <header class="score-toolbar">
+          <h2 id="score-heading">六线谱</h2>
+          <label class="track-control" for="track-select" hidden>
+            音轨 <select id="track-select"></select>
+          </label>
+          <button class="secondary" id="load-demo" type="button">查看示例谱</button>
+        </header>
+        <div class="score-sheet" id="score-sheet">
+          <div class="empty" id="empty-state">
+            <div class="staff-icon" aria-hidden="true"><span>♪</span></div>
+            <p>上传 MP3 后，生成的六线谱会显示在这里。</p>
+          </div>
+          <div id="score" aria-label="吉他六线谱" hidden></div>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

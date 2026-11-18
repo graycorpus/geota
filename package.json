@@ -1,0 +1,35 @@
+{
+  "name": "tabello-local",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-or-later",
+  "engines": {
+    "node": "^22.23.4 || >=24.22.1"
+  },
+  "scripts": {
+    "analyze": "vite-node --script src/cli.ts",
+    "test": "node --test test/cli.test.mjs test/api.test.mjs",
+    "start": "node src/server.mjs",
+    "dev:web": "vite --config vite.web.config.mjs",
+    "build:web": "vite build --config vite.web.config.mjs"
+  },
+  "dependencies": {
+    "@spotify/basic-pitch": "1.0.1",
+    "@tensorflow/tfjs": "4.22.0",
+    "@tensorflow/tfjs-backend-wasm": "4.22.0",
+    "@tensorflow/tfjs-converter": "4.22.0",
+    "@tensorflow/tfjs-core": "4.22.0",
+    "@tonejs/midi": "2.0.28",
+    "express": "^5.3.0",
+    "multer": "^2.5.0",
+    "vite-node": "5.3.0"
+  },
+  "devDependencies": {
+    "@coderline/alphatab": "1.8.4",
+    "vite": "^7.3.8"
+  },
+  "overrides": {
+    "@tensorflow/tfjs": "$@tensorflow/tfjs"
+  }
+}

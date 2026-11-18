@@ -1,0 +1,57 @@
+# TaBello 本地识别与制谱
+
+本项目提供一个独立的 Node.js 扒谱命令。核心音频识别和制谱代码取自 TaBello 提交 `73358c05de2b1bf4a5b47c610fe29cd18fefb94e`，保留原目录结构。新增入口位于 `src/analyze.ts` 和 `src/cli.ts`。每个命令处理一个本地 MP3，使用原有 Basic Pitch CPU WASM 模型，输出一条吉他轨的 AlphaTex。
+
+## 在 Windows PowerShell 中运行
+
+需要 Node.js 24.22.1 或更新版本（也支持 22.23.4 及同主版本的更新补丁），以及可从终端调用的 FFmpeg。在本目录运行：
+
+```powershell
+npm ci
+ffmpeg -version
+npm test
+npm run --silent analyze -- "C:\Music\guitar.mp3"
+```
+
+如果 FFmpeg 没有加入 PATH，可以用 `$env:FFMPEG_BIN = "C:\ffmpeg\bin\ffmpeg.exe"` 指定。安装 npm 依赖时需要下载包，Basic Pitch 权重和 WASM 已包含其中。安装完成后可以离线识别。单文件上限为上游常规路径的 15 分钟。
+
+## 从后端调用
+
+每项任务启动一个命令进程。标准输出是一行 JSON，字段包括：
+
+- `notes` 包含识别出的音符，起点和时长以秒为单位。
+- `durationSeconds` 是解码音频的长度。
+- `alphaTex` 可直接交给 alphaTab。
+- `startTime` 和 `barTimes` 是在原录音时间轴上的谱面起点和小节边界。
+- `droppedNotes` 是编排阶段无法布置到指板上的音符数。
+- `metronome` 只有检测到节拍器时才返回。
+
+标准错误输出 JSON Lines 格式的 `progress` 或 `error` 事件。进度按 `extracting`、`transcribing`、`arranging` 各阶段独立计量。进程以 0 表示成功，以 1 表示分析失败。本阶段适用于以独奏吉他为主的音频。相关许可证和上游第三方说明见 `LICENSE` 和 `THIRD_PARTY_NOTICES.md`。
+
+## 启动本地 HTTP API
+
+在本目录运行 `npm start`，默认监听 `http://127.0.0.1:3000`。可通过环境变量 `PORT` 指定端口。Vite 前端可将同源的 `/api` 请求代理到这个地址。
+
+| 请求 | 输入 | 成功响应 |
+|---|---|---|
+| `POST /api/audio/upload` | multipart 表单中的 `audio` 字段，单个 MP3，最多 25 MiB | HTTP 201，`{ "uploadId": "…" }` |
+| `POST /api/audio/analyze` | JSON `{ "uploadId": "…" }` | HTTP 202，`{ "taskId": "…", "status": "queued" }` |
+| `GET /api/tasks/:id` | 上一步的任务 ID | HTTP 200，`id`、`status`，以及按状态提供的 `progress`、`result` 或 `error` |
+
+上传 ID 可提交一次。任务依次运行，状态为 `queued`、`running`、`completed` 或 `failed`。进度格式为 `{ "stage": "transcribing", "fraction": 0.5 }`，比例以当前阶段为准。成功的 `result` 与命令行 JSON 一致。失败任务和 HTTP 错误均使用 `error.code` 和 `error.message`。
+
+待提交文件和已结束任务保留 30 分钟。分析结束后清理临时音频，单个任务超时为 5 分钟。任务记录保存在内存，服务重启后需要重新上传。前端可用用户已选择的本地 File 播放原音。
+
+## 在浏览器里验收
+
+从本目录构建网页后启动服务：
+
+```powershell
+npm ci
+npm run build:web
+npm start
+```
+
+打开 `http://127.0.0.1:3000/`。可以点击「查看示例谱」并切换两条吉他轨，也可以选择或拖入本地 MP3，点击「生成吉他谱」，再查看六线谱和试听原始录音。分析结果目前只生成一条吉他轨。网页使用录音对象 URL 试听，谱面播放同步等练习功能属于阶段 5。
+
+开发时可以在保持后端运行的同时，另开终端运行 `npm run dev:web` 并访问 Vite 显示的地址。项目使用当前工作区的独立 Vite 页面，待取得 Windows 本地 `alphatab-demo` 源码后可迁移到其现有入口。

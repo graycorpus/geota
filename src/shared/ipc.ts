@@ -1,0 +1,283 @@
+// Contract between the main process and the renderer.
+// Main registers a handler for each channel, preload exposes them as `window.tabello`.
+import type { InstrumentId } from './instruments';
+import type { MeterId } from './meters';
+
+export const IpcChannels = {
+  getAppInfo: 'app:get-info',
+  getUpdate: 'app:get-update',
+  getPreferences: 'app:get-preferences',
+  setPreferences: 'app:set-preferences',
+  openLogFolder: 'app:open-log-folder',
+  transcribe: 'transcription:start',
+  transcribeSample: 'transcription:start-sample',
+  transcribeProjectAgain: 'transcription:start-project',
+  cancelTranscription: 'transcription:cancel',
+  transcriptionProgress: 'transcription:progress',
+  listProjects: 'projects:list',
+  getProject: 'projects:get',
+  updateProjectSettings: 'projects:update-settings',
+  updateProjectNotes: 'projects:update-notes',
+  saveProjectVision: 'projects:save-vision',
+  resetProjectNotes: 'projects:reset-notes',
+  deleteProject: 'projects:delete',
+  exportFile: 'export:save-file',
+  separationModelStatus: 'separation:status',
+  downloadSeparationModel: 'separation:download',
+  cancelSeparationModelDownload: 'separation:cancel-download',
+  importSeparationModel: 'separation:import',
+  deleteSeparationModel: 'separation:delete',
+  separationModelChanged: 'separation:changed',
+} as const;
+
+export interface AppInfo {
+  name: string;
+  version: string;
+  platform: string;
+  versions: {
+    electron: string;
+    chrome: string;
+    node: string;
+  };
+}
+
+/** A newer TaBello release, and the page to download it from. */
+export interface UpdateInfo {
+  version: string;
+  url: string;
+}
+
+/** App-wide preferences. */
+export interface Preferences {
+  /** Look for a newer release on GitHub at startup. */
+  checkForUpdates: boolean;
+  /** Play the music in the menus (pages without a song). */
+  music: boolean;
+}
+
+/** Where to report a problem (GitHub's issue forms: bug, wrong transcription). */
+export const REPORT_URL = 'https://github.com/JackF007/taBello/issues/new/choose';
+
+/** Extensions offered in the file picker. FFmpeg can decode far more, this list only drives the picker. */
+export const MEDIA_EXTENSIONS = [
+  'mp3', 'wav', 'flac', 'ogg', 'oga', 'opus', 'm4a', 'aac', 'aiff', 'aif', 'wma',
+  'mp4', 'mov', 'mkv', 'webm', 'avi', 'm4v',
+] as const;
+
+/** Longer inputs are rejected: inference memory grows linearly with duration. */
+export const MAX_DURATION_SECONDS = 15 * 60;
+/** Source separation is slower (about real time) and needs more memory, so it is limited further. */
+export const MAX_SEPARATION_SECONDS = 10 * 60;
+
+/** A note detected by the model, in real time (not yet quantized to a beat grid). */
+export interface NoteEvent {
+  /** Onset in seconds. */
+  start: number;
+  /** Length in seconds. */
+  duration: number;
+  /** MIDI pitch (60 = middle C). */
+  pitch: number;
+  /** Model confidence / loudness, 0..1. */
+  velocity: number;
+  /** String chosen by the user while editing (index in the tuning's physical order); a hint for fingering. */
+  string?: number;
+  // How the note was played, from the pitch contours and the audio (absent in older projects).
+  /** Onset strength, 0..1: low for notes that were not picked (hammer-ons, pull-offs, slides). */
+  attack?: number;
+  /** Basic Pitch's onset strength, 0..1: low for a note it only inferred from sustained energy. */
+  onset?: number;
+  /** Bend, in semitones (0.5 steps). */
+  bend?: number;
+  /** While transcribing only (not saved): seconds from the start to where a bend reaches its pitch. */
+  bendAt?: number;
+  /** The bend goes back down to the original pitch. */
+  release?: boolean;
+  /** Pitch glide at the start of the note, in semitones relative to it (negative: from below). */
+  slideIn?: number;
+  /** Pitch glide at the end of the note, in semitones (positive: upwards). */
+  slideOut?: number;
+  vibrato?: boolean;
+}
+
+export type TranscriptionStage = 'starting' | 'extracting' | 'separating' | 'transcribing' | 'saving';
+
+export interface TranscriptionProgress {
+  stage: TranscriptionStage;
+  /** Progress within the current stage, 0..1. */
+  fraction: number;
+}
+
+/** Trade-off between missing quiet notes ('low') and picking up spurious ones ('high'). */
+export type Sensitivity = 'low' | 'normal' | 'high';
+
+export const SENSITIVITIES: Sensitivity[] = ['low', 'normal', 'high'];
+
+export interface TranscriptionRequest {
+  instrument: InstrumentId;
+  sensitivity: Sensitivity;
+  /** Isolate the instrument from the mix first (needs the separation model). */
+  isolate?: boolean;
+}
+
+export interface SeparationModelStatus {
+  installed: boolean;
+  /** Downloading now (TaBello does it by itself at the first start), and how far (0..1). */
+  downloading: boolean;
+  progress: number | null;
+  /** Why the last download failed (e.g. no connection); it is tried again at the next start. */
+  error: string | null;
+  /** Size of the download and of the installed model, in bytes. */
+  downloadBytes: number;
+  sizeBytes: number;
+}
+
+export const MAX_TRANSPOSE = 12;
+
+export type PartId = 'all' | 'melody' | 'accompaniment';
+export const PART_IDS: readonly PartId[] = ['all', 'melody', 'accompaniment'];
+
+export interface ProjectSettings {
+  instrument: InstrumentId;
+  /** One of the instrument's tunings; null means "use the detected tuning". */
+  tuningId: string | null;
+  /** User-chosen tempo in BPM; null means "use the detected tempo". */
+  tempo: number | null;
+  /** Capo fret for guitar/bass (0 = none); null means "use the detected capo". */
+  capo: number | null;
+  /** Time signature / feel; null means "use the detected meter". */
+  meter: MeterId | null;
+  /** Show chord names and diagrams above the staff. */
+  chords: boolean;
+  /** Write playing techniques (bends, slides, hammer-ons, vibrato). */
+  techniques: boolean;
+  /** Follow tempo changes in the recording (otherwise the tempo is constant). */
+  tempoChanges: boolean;
+  /** Semitones to move the whole part up or down (to suit a voice, or with a capo: same shapes, higher). */
+  transpose: number;
+  /** Which part to write: everything, the melody on top (a lead guitar) or the accompaniment under it. */
+  part: PartId;
+  /** Place the notes where the fretting hand is seen in the video (when there is one). */
+  videoHand: boolean;
+}
+
+/** Where the fretting hand was seen on the neck at one moment of a video: its fingertips' frets. */
+export interface HandWindow {
+  /** Seconds into the recording. */
+  time: number;
+  /** Lowest and highest fret under a fingertip (counted from the nut, capo not included). */
+  low: number;
+  high: number;
+}
+
+/** What watching a video's fretting hand found (close-ups of the neck only). */
+export interface HandVision {
+  version: 1;
+  windows: HandWindow[];
+  /** Frames looked at, and those showing the neck close enough to read. */
+  frames: number;
+  closeUps: number;
+}
+
+export interface ProjectSummary {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  sourceName: string;
+  durationSeconds: number;
+  noteCount: number;
+  settings: ProjectSettings;
+  /** The instrument was isolated from the mix before transcribing. */
+  isolated?: boolean;
+}
+
+/** A metronome heard in the recording: its clicks give the beats, its accents the bars. */
+export interface ClickTrack {
+  /** Times of the clicks (seconds). */
+  clicks: number[];
+  /** The accented clicks (first beats of bars), if the metronome has an accent. */
+  accents: number[];
+  /** Beat period (seconds). */
+  period: number;
+}
+
+export interface Project extends ProjectSummary {
+  sourcePath: string;
+  /** False when the original audio/video file was moved or deleted. */
+  sourceAvailable: boolean;
+  notes: NoteEvent[];
+  /** True when the notes were edited by hand (the detected ones can be restored). */
+  edited: boolean;
+  /** A metronome found in the recording. */
+  metronome?: ClickTrack;
+  /** The fretting hand seen in the video, once watched. */
+  vision?: HandVision;
+}
+
+/** Upper bound on the notes a project can hold (a 15-minute recording yields a few thousand). */
+export const MAX_NOTES = 50_000;
+
+export type ExportFormat = 'midi' | 'gp' | 'alphatex';
+
+export interface ExportRequest {
+  format: ExportFormat;
+  suggestedName: string;
+  data: Uint8Array;
+}
+
+export type ErrorCode = 'cancelled' | 'busy' | 'no-audio' | 'too-long' | 'not-found' | 'invalid' | 'failed';
+
+export type IpcResult<T> = { ok: true; value: T } | { ok: false; error: { code: ErrorCode; message: string } };
+
+/** Scheme serving a project's original audio/video to the renderer, with HTTP range support. */
+export const MEDIA_SCHEME = 'tabello-media';
+
+export function projectMediaUrl(projectId: string): string {
+  return `${MEDIA_SCHEME}://project/${encodeURIComponent(projectId)}`;
+}
+
+export interface TabelloApi {
+  getAppInfo(): Promise<AppInfo>;
+  /** A newer release found at startup, or null (none, offline, or the check is turned off). */
+  getUpdate(): Promise<UpdateInfo | null>;
+  getPreferences(): Promise<Preferences>;
+  setPreferences(preferences: Preferences): Promise<Preferences>;
+  /** Shows the log file (to attach to a bug report) in the file manager. */
+  openLogFolder(): Promise<void>;
+  /**
+   * Transcribes a file picked by the user (file input or drag & drop) and saves it as a project.
+   * Files not coming from the user's file system are rejected.
+   */
+  transcribe(file: File, request: TranscriptionRequest): Promise<IpcResult<ProjectSummary>>;
+  /** Transcribes one of the bundled sample recordings (see shared/samples.ts). */
+  transcribeSample(sampleId: string, request: TranscriptionRequest): Promise<IpcResult<ProjectSummary>>;
+  /**
+   * Listens to a project's recording again for another part (the bass of a guitar tab), isolated if
+   * the project was; saves it as a new project, the first one is kept.
+   */
+  transcribeProjectAgain(projectId: string, instrument: InstrumentId): Promise<IpcResult<ProjectSummary>>;
+  cancelTranscription(): Promise<void>;
+  /** Returns an unsubscribe function. */
+  onTranscriptionProgress(listener: (progress: TranscriptionProgress) => void): () => void;
+  listProjects(): Promise<ProjectSummary[]>;
+  getProject(id: string): Promise<IpcResult<Project>>;
+  updateProjectSettings(id: string, settings: ProjectSettings): Promise<IpcResult<ProjectSummary>>;
+  /** Saves hand-edited notes; the notes detected by the transcription are kept for resetProjectNotes. */
+  updateProjectNotes(id: string, notes: NoteEvent[]): Promise<IpcResult<ProjectSummary>>;
+  /** Keeps what watching the video's fretting hand found, so it is not watched again. */
+  saveProjectVision(id: string, vision: HandVision): Promise<IpcResult<null>>;
+  /** Restores the notes detected by the transcription and returns them. */
+  resetProjectNotes(id: string): Promise<IpcResult<NoteEvent[]>>;
+  deleteProject(id: string): Promise<IpcResult<void>>;
+  /** Shows a save dialog and writes the data. Resolves to the saved path, or null if cancelled. */
+  exportFile(request: ExportRequest): Promise<IpcResult<string | null>>;
+  getSeparationModel(): Promise<SeparationModelStatus>;
+  /** Downloads the separation model (about 100 MB), or waits for the download already running. */
+  downloadSeparationModel(): Promise<IpcResult<SeparationModelStatus>>;
+  cancelSeparationModelDownload(): Promise<void>;
+  /** Lets the user pick an htdemucs.onnx file. Resolves to null if the dialog is cancelled. */
+  importSeparationModel(): Promise<IpcResult<SeparationModelStatus | null>>;
+  deleteSeparationModel(): Promise<SeparationModelStatus>;
+  /** The model's status whenever it changes (download progress included). Returns an unsubscribe function. */
+  onSeparationModelChange(listener: (status: SeparationModelStatus) => void): () => void;
+}
