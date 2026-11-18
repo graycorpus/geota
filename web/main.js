@@ -1,5 +1,6 @@
-import { AlphaTabApi, FontFileFormat, Settings, StaveProfile, importer } from '@coderline/alphatab';
+import { AlphaTabApi, FontFileFormat, PlayerMode, ScrollMode, Settings, StaveProfile, importer } from '@coderline/alphatab';
 import bravura from '@coderline/alphatab/font/Bravura.woff2?url';
+import { connectPlayback } from './playback.js';
 import './style.css';
 
 const $ = id => document.getElementById(id);
@@ -16,6 +17,11 @@ const empty = $('empty-state');
 const tracks = $('track-select');
 const audio = $('original-audio');
 const audioSection = $('audio-section');
+const speed = $('playback-speed');
+const loopStart = $('loop-start');
+const loopEnd = $('loop-end');
+const loopToggle = $('loop-toggle');
+const loopRange = $('loop-range');
 
 const sample = String.raw`\title "双吉他示例"
 \tempo 100
@@ -52,6 +58,8 @@ let busy = false;
 let api;
 let score;
 let audioUrl;
+let disconnectPlayback;
+let barTimes = [];
 
 function reportError(message) {
   status.textContent = '';
@@ -94,7 +102,26 @@ function showAudio(file) {
   audioSection.hidden = !file;
 }
 
-function showScore(tex) {
+function getLoop() {
+  if (loopToggle.getAttribute('aria-pressed') !== 'true') return undefined;
+  const start = Math.max(0, barTimes[Number(loopStart.value) - 1]);
+  const limit = Number.isFinite(audio.duration) ? audio.duration : Infinity;
+  const end = Math.min(barTimes[Number(loopEnd.value)], limit);
+  return end > start ? { start, end } : undefined;
+}
+
+function setBarTimes(times) {
+  barTimes = Array.isArray(times) ? times : [];
+  loopRange.hidden = barTimes.length < 2;
+  loopToggle.setAttribute('aria-pressed', 'false');
+  const options = barTimes.slice(1).map((_, index) => new Option(String(index + 1), String(index + 1)));
+  loopStart.replaceChildren(...options);
+  loopEnd.replaceChildren(...options.map(option => option.cloneNode(true)));
+  loopEnd.selectedIndex = options.length - 1;
+  speed.value = '1';
+}
+
+function showScore(tex, file, timing) {
   const parser = new importer.AlphaTexImporter();
   parser.initFromString(tex, new Settings());
   const nextScore = parser.readScore();
@@ -102,16 +129,32 @@ function showScore(tex) {
 
   empty.hidden = true;
   scoreElement.hidden = false;
-  if (!api) {
-    api = new AlphaTabApi(scoreElement, {
-      core: {
-        useWorkers: false,
-        smuflFontSources: new Map([[FontFileFormat.Woff2, bravura]]),
-      },
-      display: { staveProfile: StaveProfile.Tab },
-    });
-    api.error.on(() => reportError('六线谱渲染失败，请重新生成。'));
-  }
+  disconnectPlayback?.();
+  api?.destroy();
+  showAudio(file);
+  setBarTimes(timing?.barTimes);
+  audio.preservesPitch = true;
+  audio.playbackRate = 1;
+  api = new AlphaTabApi(scoreElement, {
+    core: {
+      useWorkers: false,
+      smuflFontSources: new Map([[FontFileFormat.Woff2, bravura]]),
+    },
+    display: { staveProfile: StaveProfile.Tab },
+    player: {
+      playerMode: file ? PlayerMode.EnabledExternalMedia : PlayerMode.Disabled,
+      enableCursor: Boolean(file),
+      enableElementHighlighting: Boolean(file),
+      enableAnimatedBeatCursor: Boolean(file),
+      enableUserInteraction: Boolean(file),
+      scrollMode: ScrollMode.Off,
+      scrollOffsetY: -90,
+    },
+  });
+  api.error.on(() => reportError('六线谱渲染失败，请重新生成。'));
+  disconnectPlayback = file
+    ? connectPlayback(api, audio, timing.startTime, getLoop, () => reportError('无法播放原始录音。'))
+    : undefined;
   score = nextScore;
   tracks.replaceChildren(...score.tracks.map((track, index) =>
     new Option(track.name || `音轨 ${index + 1}`, String(index))));
@@ -166,11 +209,24 @@ drop.addEventListener('drop', event => {
   selectFile(event.dataTransfer.files[0]);
 });
 
+speed.addEventListener('change', () => { audio.playbackRate = Number(speed.value); });
+audio.addEventListener('ratechange', () => { speed.value = String(audio.playbackRate); });
+loopStart.addEventListener('change', () => {
+  if (Number(loopStart.value) > Number(loopEnd.value)) loopEnd.value = loopStart.value;
+});
+loopEnd.addEventListener('change', () => {
+  if (Number(loopEnd.value) < Number(loopStart.value)) loopStart.value = loopEnd.value;
+});
+loopToggle.addEventListener('click', () => {
+  const enable = loopToggle.getAttribute('aria-pressed') !== 'true';
+  loopToggle.setAttribute('aria-pressed', String(enable));
+  const loop = getLoop();
+  if (loop) audio.currentTime = loop.start;
+});
 tracks.addEventListener('change', () => api.renderTracks([score.tracks[Number(tracks.value)]]));
 demo.addEventListener('click', () => {
   try {
     showScore(sample);
-    showAudio();
     updateStatus('');
   } catch {
     reportError('示例曲谱加载失败，请刷新后重试。');
@@ -184,8 +240,7 @@ form.addEventListener('submit', async event => {
   busy = input.disabled = generate.disabled = demo.disabled = true;
   try {
     const result = await generateScore(file);
-    showScore(result.alphaTex);
-    showAudio(file);
+    showScore(result.alphaTex, file, result);
     updateStatus(result.notes.length ? `识别完成 · ${result.notes.length} 个音符` : '识别完成，未检测到吉他音符。');
   } catch (error) {
     reportError(error.message);

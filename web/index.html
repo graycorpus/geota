@@ -33,6 +33,22 @@
           <section class="audio-section" id="audio-section" aria-labelledby="audio-heading" hidden>
             <h2 id="audio-heading">原始录音</h2>
             <audio id="original-audio" controls preload="metadata" aria-label="原始录音"></audio>
+            <div class="practice-controls" aria-label="练习设置">
+              <label class="practice-speed">播放速度
+                <select id="playback-speed">
+                  <option value="0.5">0.5×</option>
+                  <option value="0.75">0.75×</option>
+                  <option value="1" selected>1×</option>
+                  <option value="1.25">1.25×</option>
+                  <option value="1.5">1.5×</option>
+                </select>
+              </label>
+              <div class="loop-range" id="loop-range" hidden>
+                <label>起始小节 <select id="loop-start"></select></label>
+                <label>结束小节 <select id="loop-end"></select></label>
+                <button class="secondary" id="loop-toggle" type="button" aria-pressed="false">循环练习</button>
+              </div>
+            </div>
           </section>
         </section>
       </aside>

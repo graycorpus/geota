@@ -56,3 +56,17 @@ select { max-width: min(200px, 55vw); min-height: 40px; padding: 6px 8px; }
   .input-panel { margin-top: 20px; }
   .score-sheet, .empty { min-height: 46vh; }
 }
+
+.practice-controls { display: grid; gap: 12px; margin-top: 12px; font-size: 14px; }
+.practice-speed, .loop-range label { display: flex; align-items: center; gap: 8px; }
+.practice-speed { justify-content: space-between; }
+.loop-range { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.loop-range label { flex-direction: column; align-items: stretch; }
+.loop-range button { grid-column: 1 / -1; }
+.loop-range button[aria-pressed="true"] { color: #243415; background: var(--accent); }
+.at-cursor-bar { background: rgb(90 145 63 / 14%); }
+.at-cursor-beat { background: #426a30; width: 3px; }
+.at-highlight * { fill: #236627; stroke: #236627; }
+@media (min-width: 721px) {
+  .sidebar { position: sticky; top: 0; align-self: start; min-height: 100vh; max-height: 100vh; overflow-y: auto; }
+}
