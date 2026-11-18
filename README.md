@@ -57,3 +57,11 @@ npm start
 开发时可以在保持后端运行的同时，另开终端运行 `npm run dev:web` 并访问 Vite 显示的地址。项目使用当前工作区的独立 Vite 页面，待取得 Windows 本地 `alphatab-demo` 源码后可迁移到其现有入口。
 
 谱面按小节显示和弦指法，六线谱保留节奏符干和连梁，下方用数字简谱显示吉他上声部的最高音。简谱是练习参考，来自识别后的吉他声部。上传流程只接收 MP3，因此不会自动添加歌词或歌手、词曲作者信息。
+
+## 编辑和保存曲谱
+
+生成曲谱后，点谱面上方的「编辑曲谱」。可以直接点击六线谱上的品位，也可以选择小节、声部和拍位。选中已有音符后修改目标弦或品位，点击「应用修改」。要补音，选择「添加新音符」再指定弦和品位。支持删除、撤销和重做。对延音链的修改或删除会作用于整条延音链。
+
+编辑保留原有节奏网格，方便继续跟随原录音。数字简谱会随音符更新，和弦标记来自原始识别结果。编辑历史保留到切换曲谱或刷新前。点击「导出 Guitar Pro」将修改后的谱保存为 `.gp` 文件。
+
+网页编辑使用 [alphaTab](https://github.com/CoderLine/alphaTab) 的谱面模型与 Guitar Pro 7 导出器。编辑流程参考了 [TaBello 的源码](https://github.com/JackF007/taBello/blob/73358c05de2b1bf4a5b47c610fe29cd18fefb94e/src/renderer/src/lib/music/edit.ts)。[TuxGuitar](https://github.com/helge17/tuxguitar) 可作为独立的桌面制谱工具。

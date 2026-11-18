@@ -1,5 +1,6 @@
 import { AlphaTabApi, FontFileFormat, PlayerMode, ScrollMode, Settings, StaveProfile, TabRhythmMode, importer } from '@coderline/alphatab';
 import bravura from '@coderline/alphatab/font/Bravura.woff2?url';
+import { createEditor } from './editor.js';
 import { applyGuitarLayout } from './score-layout.js';
 import { connectPlayback } from './playback.js';
 import './style.css';
@@ -63,6 +64,14 @@ let score;
 let audioUrl;
 let disconnectPlayback;
 let barTimes = [];
+const editor = createEditor((nextScore, track) => {
+  const position = audio.currentTime;
+  audio.pause();
+  applyGuitarLayout(nextScore, new Settings());
+  score = nextScore;
+  api.renderScore(score, [track]);
+  if (audio.src && audio.currentTime !== position) audio.currentTime = position;
+});
 
 function reportError(message) {
   status.textContent = '';
@@ -129,8 +138,9 @@ function showScore(tex, file, timing) {
   const settings = new Settings();
   parser.initFromString(tex, settings);
   const nextScore = parser.readScore();
-  applyGuitarLayout(nextScore, settings);
   if (!nextScore.tracks.length) throw new Error('曲谱没有可显示的音轨。');
+  editor.load(nextScore);
+  applyGuitarLayout(nextScore, settings);
 
   empty.hidden = true;
   scoreElement.hidden = false;
@@ -143,6 +153,7 @@ function showScore(tex, file, timing) {
   api = new AlphaTabApi(scoreElement, {
     core: {
       useWorkers: false,
+      includeNoteBounds: true,
       smuflFontSources: new Map([[FontFileFormat.Woff2, bravura]]),
     },
     display: { staveProfile: StaveProfile.Default },
@@ -157,6 +168,8 @@ function showScore(tex, file, timing) {
       scrollOffsetY: -90,
     },
   });
+  api.beatMouseDown.on(beat => editor.select(beat));
+  api.noteMouseDown.on(note => editor.select(note.beat, note));
   api.error.on(() => reportError('六线谱渲染失败，请重新生成。'));
   disconnectPlayback = file
     ? connectPlayback(api, audio, timing.startTime, getLoop, () => reportError('无法播放原始录音。'))
@@ -229,7 +242,11 @@ loopToggle.addEventListener('click', () => {
   const loop = getLoop();
   if (loop) audio.currentTime = loop.start;
 });
-tracks.addEventListener('change', () => api.renderTracks([score.tracks[Number(tracks.value)]]));
+tracks.addEventListener('change', () => {
+  const track = Number(tracks.value);
+  editor.setTrack(track);
+  api.renderTracks([score.tracks[track]]);
+});
 demo.addEventListener('click', () => {
   try {
     showScore(sample);

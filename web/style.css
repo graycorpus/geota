@@ -70,3 +70,10 @@ select { max-width: min(200px, 55vw); min-height: 40px; padding: 6px 8px; }
 @media (min-width: 721px) {
   .sidebar { position: sticky; top: 0; align-self: start; min-height: 100vh; max-height: 100vh; overflow-y: auto; }
 }
+
+.score-editor { border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+.editor-fields, .editor-actions { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 8px 12px; margin-top: 12px; }
+.editor-fields label { display: grid; gap: 4px; }
+.editor-fields input { width: 75px; min-height: 40px; padding: 6px 8px; background: #222b23; color: #edf0e9; border: 1px solid var(--border); border-radius: 8px; }
+.editor-actions .primary { width: auto; margin-top: 0; }
+#edit-message:not(:empty) { margin-top: 9px; color: var(--accent); }

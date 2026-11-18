@@ -58,8 +58,28 @@
           <label class="track-control" for="track-select" hidden>
             音轨 <select id="track-select"></select>
           </label>
+          <button class="secondary" id="edit-score" type="button" aria-controls="score-editor" aria-expanded="false" hidden>编辑曲谱</button>
           <button class="secondary" id="load-demo" type="button">查看示例谱</button>
         </header>
+        <section class="score-editor" id="score-editor" aria-label="编辑曲谱" hidden>
+          <p>点击谱上的品位，或用下方选项定位。选择「添加新音符」可以在该拍补音。</p>
+          <div class="editor-fields">
+            <label>小节 <select id="edit-bar"></select></label>
+            <label>声部 <select id="edit-voice"></select></label>
+            <label>第几个位置 <select id="edit-beat"></select></label>
+            <label>音符 <select id="edit-note"></select></label>
+            <label>目标弦 <select id="edit-string"></select></label>
+            <label>品位 <input id="edit-fret" type="number" inputmode="numeric" min="0" max="22" step="1" value="0"></label>
+          </div>
+          <div class="editor-actions">
+            <button class="primary" id="edit-apply" type="button">应用修改</button>
+            <button class="secondary" id="edit-delete" type="button">删除音符</button>
+            <button class="secondary" id="edit-undo" type="button">撤销</button>
+            <button class="secondary" id="edit-redo" type="button">重做</button>
+            <button class="secondary" id="edit-export" type="button">导出 Guitar Pro</button>
+          </div>
+          <p id="edit-message" role="status"></p>
+        </section>
         <div class="score-sheet" id="score-sheet">
           <div class="empty" id="empty-state">
             <div class="staff-icon" aria-hidden="true"><span>♪</span></div>
