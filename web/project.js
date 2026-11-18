@@ -1,4 +1,5 @@
 import { model } from '@coderline/alphatab';
+import { validRepeat } from './repeat.js';
 
 const magic = 'GEOTA1\n';
 const maxMetadata = 32 * 1024 * 1024;
@@ -12,6 +13,7 @@ export function saveProject(score, audio, timing) {
     startTime: timing?.startTime,
     barTimes: timing?.barTimes,
     mode: timing?.mode,
+    repeat: timing?.repeat,
     showNumbered: timing?.showNumbered,
   })]);
   if (metadata.size > maxMetadata || (audio?.size ?? 0) > maxAudio) {
@@ -31,12 +33,13 @@ export async function openProject(file) {
   const audioLength = file.size - audioOffset;
   if (audioLength < 0 || audioLength > maxAudio) throw invalid();
   try {
-    const { score: scoreJson, audioName, startTime, barTimes, mode, showNumbered } =
+    const { score: scoreJson, audioName, startTime, barTimes, mode, showNumbered, repeat } =
       JSON.parse(await file.slice(headerLength, audioOffset).text());
     const score = model.JsonConverter.jsonToScore(scoreJson);
     if (!score.tracks.length) throw invalid();
     const preferences = {
       ...(mode === 'accompaniment' ? { mode } : {}),
+      ...(validRepeat(repeat, score.masterBars.length) ? { repeat } : {}),
       ...(typeof showNumbered === 'boolean' ? { showNumbered } : {}),
     };
     if (audioLength === 0) return { score, timing: preferences };

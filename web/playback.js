@@ -1,14 +1,22 @@
 import { ScrollMode, synth } from '@coderline/alphatab';
+import { createRepeatPlayback } from './repeat.js';
 
-export function connectPlayback(api, audio, startTime, getLoop, onError) {
+export function connectPlayback(api, audio, startTime, getLoop, getRepeat, onError) {
   let frame = 0;
   let output;
+  let returnTarget;
+  const repeats = createRepeatPlayback();
   const scoreTime = seconds => Math.max(0, (seconds - startTime) * 1000 / audio.playbackRate);
   const sync = () => {
-    const loop = getLoop();
-    if (loop && !audio.paused && !audio.seeking &&
-      (audio.currentTime < loop.start || audio.currentTime >= loop.end)) {
-      audio.currentTime = loop.start;
+    if (!audio.paused && !audio.seeking) {
+      const loop = getLoop();
+      const position = audio.currentTime;
+      const repeatStart = repeats.advance(position, loop ? undefined : getRepeat());
+      if (loop && (position < loop.start || position >= loop.end)) audio.currentTime = loop.start;
+      else if (repeatStart !== undefined) {
+        returnTarget = repeatStart;
+        audio.currentTime = repeatStart;
+      }
     }
     output?.updatePosition(scoreTime(audio.currentTime));
   };
@@ -29,8 +37,10 @@ export function connectPlayback(api, audio, startTime, getLoop, onError) {
   };
   const onEnded = () => {
     const loop = getLoop();
-    if (loop) {
-      audio.currentTime = loop.start;
+    const restart = loop?.start ?? repeats.advance(audio.currentTime, getRepeat());
+    if (restart !== undefined) {
+      returnTarget = loop ? undefined : restart;
+      audio.currentTime = restart;
       void audio.play().catch(onError);
     } else {
       onPause();
@@ -59,7 +69,12 @@ export function connectPlayback(api, audio, startTime, getLoop, onError) {
     if (output) api.playbackSpeed = audio.playbackRate;
     sync();
   };
-  const events = { play: onPlay, pause: onPause, ended: onEnded, seeked: sync,
+  const onSeeked = () => {
+    repeats.seek(audio.currentTime, returnTarget !== undefined && Math.abs(audio.currentTime - returnTarget) < 0.01);
+    returnTarget = undefined;
+    sync();
+  };
+  const events = { play: onPlay, pause: onPause, ended: onEnded, seeked: onSeeked,
     loadedmetadata: sync, ratechange: onRate };
   for (const [event, handler] of Object.entries(events)) audio.addEventListener(event, handler);
   api.playerReady.on(onReady);

@@ -3,6 +3,7 @@ import bravura from '@coderline/alphatab/font/Bravura.woff2?url';
 import { openProject, saveProject } from './project.js';
 import { createEditor } from './editor.js';
 import { applyGuitarLayout } from './score-layout.js';
+import { validRepeat } from './repeat.js';
 import { connectPlayback } from './playback.js';
 import './style.css';
 
@@ -71,12 +72,47 @@ let disconnectPlayback;
 let barTimes = [];
 let projectAudio;
 let projectTiming;
+let scoreRepeat;
+const repeatStart = $('repeat-start');
+const repeatEnd = $('repeat-end');
+const repeatPlays = $('repeat-plays');
+const repeatStatus = $('repeat-status');
+const repeatRemove = $('repeat-remove');
+
+function drawRepeat() {
+  for (const bar of score.masterBars) {
+    bar.isRepeatStart = bar.index + 1 === scoreRepeat?.startBar;
+    bar.repeatCount = bar.index + 1 === scoreRepeat?.endBar ? scoreRepeat.plays : 0;
+  }
+  api.render();
+}
+
+function getRepeat() {
+  if (!scoreRepeat) return undefined;
+  const start = Math.max(0, barTimes[scoreRepeat.startBar - 1]);
+  const end = Math.min(barTimes[scoreRepeat.endBar], Number.isFinite(audio.duration) ? audio.duration : Infinity);
+  return end > start ? { start, end, plays: scoreRepeat.plays } : undefined;
+}
+
+function refreshRepeatControls() {
+  $('repeat-settings').hidden = barTimes.length < 2;
+  for (const select of [repeatStart, repeatEnd]) {
+    select.replaceChildren(...barTimes.slice(1).map((_, i) => new Option(String(i + 1), String(i + 1))));
+  }
+  repeatStart.value = String(scoreRepeat?.startBar ?? 1);
+  repeatEnd.value = String(scoreRepeat?.endBar ?? Math.max(1, barTimes.length - 1));
+  repeatPlays.value = String(scoreRepeat?.plays ?? 2);
+  repeatRemove.disabled = !scoreRepeat;
+  repeatStatus.textContent = scoreRepeat
+    ? `第 ${scoreRepeat.startBar}–${scoreRepeat.endBar} 小节共唱 ${scoreRepeat.plays} 遍` : '';
+}
 const editor = createEditor((nextScore, track) => {
   const position = audio.currentTime;
   audio.pause();
   applyGuitarLayout(nextScore, new Settings(), showNumbered.checked);
   score = nextScore;
   api.renderScore(score, [track]);
+  if (scoreRepeat) drawRepeat();
   if (audio.src && audio.currentTime !== position) audio.currentTime = position;
 });
 
@@ -164,6 +200,8 @@ function presentScore(nextScore, file, timing) {
   api?.destroy();
   showAudio(file);
   setBarTimes(timing?.barTimes);
+  scoreRepeat = validRepeat(timing?.repeat, barTimes.length - 1) ? timing.repeat : undefined;
+  refreshRepeatControls();
   audio.preservesPitch = true;
   audio.playbackRate = 1;
   api = new AlphaTabApi(scoreElement, {
@@ -188,7 +226,7 @@ function presentScore(nextScore, file, timing) {
   api.noteMouseDown.on(note => editor.select(note.beat, note));
   api.error.on(() => reportError('六线谱渲染失败，请重新生成。'));
   disconnectPlayback = file
-    ? connectPlayback(api, audio, timing.startTime, getLoop, () => reportError('无法播放原始录音。'))
+    ? connectPlayback(api, audio, timing.startTime, getLoop, getRepeat, () => reportError('无法播放原始录音。'))
     : undefined;
   score = nextScore;
   tracks.replaceChildren(...score.tracks.map((track, index) =>
@@ -197,6 +235,8 @@ function presentScore(nextScore, file, timing) {
   tracks.disabled = score.tracks.length < 2;
   tracks.parentElement.hidden = false;
   api.renderScore(score, [0]);
+  // Keep the alphaTab playback timeline linear. The audio controller handles actual jumps.
+  if (scoreRepeat) drawRepeat();
 }
 
 async function request(url, options) {
@@ -252,7 +292,7 @@ projectInput.addEventListener('change', async () => {
 projectSave.addEventListener('click', () => {
   try {
     const editableScore = editor.currentScore();
-    const data = saveProject(editableScore, projectAudio, { ...projectTiming, showNumbered: showNumbered.checked });
+    const data = saveProject(editableScore, projectAudio, { ...projectTiming, repeat: scoreRepeat, showNumbered: showNumbered.checked });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(data);
     link.download = (editableScore.title.replace(/[<>:"/\\|?*]/g, '_').trim() || '吉他谱') + '.geota';
@@ -299,6 +339,21 @@ loopToggle.addEventListener('click', () => {
   loopToggle.setAttribute('aria-pressed', String(enable));
   const loop = getLoop();
   if (loop) audio.currentTime = loop.start;
+});
+$('repeat-apply').addEventListener('click', () => {
+  const repeat = { startBar: Number(repeatStart.value), endBar: Number(repeatEnd.value), plays: Number(repeatPlays.value) };
+  if (!validRepeat(repeat, barTimes.length - 1)) {
+    repeatStatus.textContent = '请选择有效的起止小节，演唱总次数为 2 到 8。';
+    return;
+  }
+  scoreRepeat = repeat;
+  drawRepeat();
+  refreshRepeatControls();
+});
+repeatRemove.addEventListener('click', () => {
+  scoreRepeat = undefined;
+  drawRepeat();
+  refreshRepeatControls();
 });
 tracks.addEventListener('change', () => {
   const track = Number(tracks.value);

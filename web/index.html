@@ -90,6 +90,19 @@
           </div>
           <p id="edit-message" role="status"></p>
         </section>
+        <fieldset class="score-editor" id="repeat-settings" hidden>
+          <legend>反复演唱</legend>
+          <div class="editor-fields">
+            <label>反复起始小节 <select id="repeat-start"></select></label>
+            <label>反复结束小节 <select id="repeat-end"></select></label>
+            <label>演唱总次数 <input id="repeat-plays" type="number" min="2" max="8" value="2"></label>
+          </div>
+          <div class="editor-actions">
+            <button class="secondary" id="repeat-apply" type="button">标记反复</button>
+            <button class="secondary" id="repeat-remove" type="button" disabled>取消反复</button>
+          </div>
+          <p id="repeat-status" role="status"></p>
+        </fieldset>
         <div class="score-sheet" id="score-sheet">
           <div class="empty" id="empty-state">
             <div class="staff-icon" aria-hidden="true"><span>♪</span></div>
