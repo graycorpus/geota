@@ -1,5 +1,6 @@
-import { AlphaTabApi, FontFileFormat, PlayerMode, ScrollMode, Settings, StaveProfile, importer } from '@coderline/alphatab';
+import { AlphaTabApi, FontFileFormat, PlayerMode, ScrollMode, Settings, StaveProfile, TabRhythmMode, importer } from '@coderline/alphatab';
 import bravura from '@coderline/alphatab/font/Bravura.woff2?url';
+import { applyGuitarLayout } from './score-layout.js';
 import { connectPlayback } from './playback.js';
 import './style.css';
 
@@ -28,7 +29,9 @@ const sample = String.raw`\title "双吉他示例"
 .
 \track "主奏吉他"
 \tuning E4 B3 G3 D3 A2 E2
-:4 0.1 1.1 3.1 1.1 | 0.1 0.2 1.2 3.2 |
+\chord ("C" 0 1 0 2 3 x)
+\chord ("G" 3 0 0 0 2 3)
+:4 0.1 {ch "C"} 1.1 3.1 1.1 | 0.1 {ch "G"} 0.2 1.2 3.2 |
 \track "节奏吉他"
 \tuning E4 B3 G3 D3 A2 E2
 :2 (0.1 1.2 0.3 2.4 3.5) (1.1 1.2 2.3 3.4) | (0.1 0.2 0.3 2.4 2.5 0.6) (3.1 0.2 0.3 0.4 2.5 3.6) |`;
@@ -123,8 +126,10 @@ function setBarTimes(times) {
 
 function showScore(tex, file, timing) {
   const parser = new importer.AlphaTexImporter();
-  parser.initFromString(tex, new Settings());
+  const settings = new Settings();
+  parser.initFromString(tex, settings);
   const nextScore = parser.readScore();
+  applyGuitarLayout(nextScore, settings);
   if (!nextScore.tracks.length) throw new Error('曲谱没有可显示的音轨。');
 
   empty.hidden = true;
@@ -140,7 +145,8 @@ function showScore(tex, file, timing) {
       useWorkers: false,
       smuflFontSources: new Map([[FontFileFormat.Woff2, bravura]]),
     },
-    display: { staveProfile: StaveProfile.Tab },
+    display: { staveProfile: StaveProfile.Default },
+    notation: { rhythmMode: TabRhythmMode.ShowWithBars },
     player: {
       playerMode: file ? PlayerMode.EnabledExternalMedia : PlayerMode.Disabled,
       enableCursor: Boolean(file),

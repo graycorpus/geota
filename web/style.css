@@ -45,10 +45,10 @@ audio { width: 100%; margin-top: 10px; }
 .score-toolbar h2 { margin-right: auto; }
 .track-control { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
 select { max-width: min(200px, 55vw); min-height: 40px; padding: 6px 8px; }
-.score-sheet { min-height: 70vh; position: relative; border-radius: 14px; background: #f6f4e9; color: #2a362e; overflow: hidden; }
+.score-sheet { border: 1px solid #e3e5df; min-height: 70vh; position: relative; border-radius: 14px; background: #fff; color: #2a362e; overflow: hidden; }
 .empty { min-height: 70vh; display: grid; place-content: center; justify-items: center; gap: 23px; padding: 25px; text-align: center; }
 .staff-icon { position: relative; width: 130px; height: 54px; background: repeating-linear-gradient(to bottom, #a6b29e 0 1px, transparent 1px 10px); }
-.staff-icon span { display: grid; place-items: center; position: absolute; left: 47px; top: -10px; width: 36px; height: 72px; background: #f6f4e9; font-size: 45px; color: #42654b; }
+.staff-icon span { display: grid; place-items: center; position: absolute; left: 47px; top: -10px; width: 36px; height: 72px; background: #fff; font-size: 45px; color: #42654b; }
 #score { min-width: 0; color-scheme: light; }
 @media (max-width: 720px) {
   .workspace { grid-template-columns: minmax(0, 1fr); }
