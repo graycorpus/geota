@@ -10,6 +10,7 @@ try {
   const result = await analyzeMp3(inputPath, {
     ffmpegPath: process.env.FFMPEG_BIN,
     title: process.env.TABELLO_AUDIO_TITLE,
+    mode: process.env.TABELLO_SCORE_MODE === 'accompaniment' ? 'accompaniment' : 'transcription',
     onProgress: (stage, fraction) => {
       process.stderr.write(JSON.stringify({ type: 'progress', stage, fraction }) + '\n');
     },

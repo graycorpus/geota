@@ -14,6 +14,8 @@ const generate = $('generate');
 const demo = $('load-demo');
 const projectInput = $('project-input');
 const projectSave = $('project-save');
+const mode = $('score-mode');
+const showNumbered = $('show-numbered');
 const status = $('status');
 const progress = $('progress');
 const errorBox = $('error');
@@ -72,7 +74,7 @@ let projectTiming;
 const editor = createEditor((nextScore, track) => {
   const position = audio.currentTime;
   audio.pause();
-  applyGuitarLayout(nextScore, new Settings());
+  applyGuitarLayout(nextScore, new Settings(), showNumbered.checked);
   score = nextScore;
   api.renderScore(score, [track]);
   if (audio.src && audio.currentTime !== position) audio.currentTime = position;
@@ -152,7 +154,9 @@ function presentScore(nextScore, file, timing) {
   projectAudio = file;
   projectTiming = timing;
   projectSave.hidden = false;
-  applyGuitarLayout(nextScore, settings);
+  showNumbered.checked = timing?.showNumbered ?? (timing?.mode !== 'accompaniment');
+  $('numbered-control').hidden = false;
+  applyGuitarLayout(nextScore, settings, showNumbered.checked);
 
   empty.hidden = true;
   scoreElement.hidden = false;
@@ -209,7 +213,7 @@ async function request(url, options) {
   return body;
 }
 
-async function generateScore(file) {
+async function generateScore(file, scoreMode) {
   updateStatus('正在上传 MP3');
   const body = new FormData();
   body.append('audio', file);
@@ -217,7 +221,7 @@ async function generateScore(file) {
   const { taskId } = await request('/api/audio/analyze', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ uploadId }),
+    body: JSON.stringify({ uploadId, mode: scoreMode }),
   });
   for (;;) {
     const { status: state, progress: current, result, error } = await request('/api/tasks/' + encodeURIComponent(taskId));
@@ -248,7 +252,7 @@ projectInput.addEventListener('change', async () => {
 projectSave.addEventListener('click', () => {
   try {
     const editableScore = editor.currentScore();
-    const data = saveProject(editableScore, projectAudio, projectTiming);
+    const data = saveProject(editableScore, projectAudio, { ...projectTiming, showNumbered: showNumbered.checked });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(data);
     link.download = (editableScore.title.replace(/[<>:"/\\|?*]/g, '_').trim() || '吉他谱') + '.geota';
@@ -258,6 +262,16 @@ projectSave.addEventListener('click', () => {
   } catch (error) {
     reportError(error.message);
   }
+});
+
+showNumbered.addEventListener('change', () => {
+  const position = audio.currentTime;
+  audio.pause();
+  for (const instrument of score.tracks) {
+    for (const staff of instrument.staves.slice(1)) staff.showNumbered = showNumbered.checked;
+  }
+  api.render();
+  if (audio.src && audio.currentTime !== position) audio.currentTime = position;
 });
 
 input.addEventListener('change', () => selectFile(input.files[0]));
@@ -306,7 +320,8 @@ form.addEventListener('submit', async event => {
   const file = selectedFile;
   busy = input.disabled = generate.disabled = demo.disabled = $('project-open').disabled = true;
   try {
-    const result = await generateScore(file);
+    const scoreMode = mode.value;
+    const result = await generateScore(file, scoreMode);
     showScore(result.alphaTex, file, result);
     updateStatus(result.notes.length ? `识别完成 · ${result.notes.length} 个音符` : '识别完成，未检测到吉他音符。');
   } catch (error) {

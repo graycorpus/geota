@@ -20,6 +20,7 @@ const assets = {
 export interface AnalyzeOptions {
   ffmpegPath?: string;
   title?: string;
+  mode?: 'transcription' | 'accompaniment';
   sensitivity?: Sensitivity;
   onProgress?: (stage: 'extracting' | 'transcribing' | 'arranging', fraction: number) => void;
 }
@@ -83,8 +84,9 @@ export async function analyzeMp3(inputPath: string, options: AnalyzeOptions = {}
     instrument,
     tuning: tuning.strings,
     capo,
+    mode: options.mode,
   });
   onProgress?.('arranging', 1);
 
-  return { notes, durationSeconds: audio.length / SAMPLE_RATE, alphaTex, startTime, barTimes, droppedNotes, metronome };
+  return { notes, durationSeconds: audio.length / SAMPLE_RATE, alphaTex, startTime, barTimes, droppedNotes, metronome, mode: options.mode ?? 'transcription' };
 }

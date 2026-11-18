@@ -29,11 +29,11 @@ test('local HTTP API uploads, queues, transcribes, and reports errors', { timeou
     return fetch(address + '/api/audio/upload', { method: 'POST', body });
   }
 
-  function submit(uploadId) {
+  function submit(uploadId, mode) {
     return fetch(address + '/api/audio/analyze', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ uploadId }),
+      body: JSON.stringify({ uploadId, mode }),
     });
   }
 
@@ -59,7 +59,8 @@ test('local HTTP API uploads, queues, transcribes, and reports errors', { timeou
   const uploaded = await upload('吉他 E4.MP3', audio);
   assert.equal(uploaded.status, 201);
   const { uploadId } = await uploaded.json();
-  const accepted = await submit(uploadId);
+  assert.equal((await submit(uploadId, 'unknown')).status, 400);
+  const accepted = await submit(uploadId, 'accompaniment');
   assert.equal(accepted.status, 202);
   const { taskId, status } = await accepted.json();
   assert.equal(status, 'queued');
@@ -75,6 +76,7 @@ test('local HTTP API uploads, queues, transcribes, and reports errors', { timeou
   const completed = await waitForTask(taskId);
   assert.equal(completed.status, 'completed', JSON.stringify(completed.error));
   assert.deepEqual(completed.progress, { stage: 'arranging', fraction: 1 });
+  assert.equal(completed.result.mode, 'accompaniment');
   assert(completed.result.notes.some(note => note.pitch === 64));
   const parser = new importer.AlphaTexImporter();
   parser.initFromString(completed.result.alphaTex, new Settings());

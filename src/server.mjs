@@ -51,7 +51,7 @@ function runAnalysis(input, task) {
       'node_modules/vite-node/dist/cli.mjs', '--script', 'src/cli.ts', input.path,
     ], {
       cwd: root,
-      env: { ...process.env, TABELLO_AUDIO_TITLE: input.title },
+      env: { ...process.env, TABELLO_AUDIO_TITLE: input.title, TABELLO_SCORE_MODE: task.mode },
       timeout: 5 * 60 * 1000,
       maxBuffer: 32 * 1024 * 1024,
       signal: shutdown.signal,
@@ -156,7 +156,10 @@ app.post('/api/audio/upload', (req, res, next) => {
 });
 
 app.post('/api/audio/analyze', (req, res, next) => {
-  const { uploadId } = req.body ?? {};
+  const { uploadId, mode = 'transcription' } = req.body ?? {};
+  if (mode !== 'transcription' && mode !== 'accompaniment') {
+    return next(new RequestError(400, 'invalid-score-mode', 'Choose a supported score mode.'));
+  }
   if (typeof uploadId !== 'string' || !uploadId) {
     return next(new RequestError(400, 'invalid-upload-id', 'Provide an uploadId.'));
   }
@@ -169,7 +172,7 @@ app.post('/api/audio/analyze', (req, res, next) => {
   }
 
   const id = randomUUID();
-  const task = { id, status: 'queued' };
+  const task = { id, status: 'queued', mode };
   uploads.delete(uploadId);
   tasks.set(id, task);
   queue.push({ input, task });

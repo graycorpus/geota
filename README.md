@@ -35,7 +35,7 @@ npm run --silent analyze -- "C:\Music\guitar.mp3"
 | 请求 | 输入 | 成功响应 |
 |---|---|---|
 | `POST /api/audio/upload` | multipart 表单中的 `audio` 字段，单个 MP3，最多 25 MiB | HTTP 201，`{ "uploadId": "…" }` |
-| `POST /api/audio/analyze` | JSON `{ "uploadId": "…" }` | HTTP 202，`{ "taskId": "…", "status": "queued" }` |
+| `POST /api/audio/analyze` | JSON `{ "uploadId": "…", "mode": "accompaniment" }`（mode 可选，API 默认 transcription） | HTTP 202，`{ "taskId": "…", "status": "queued" }` |
 | `GET /api/tasks/:id` | 上一步的任务 ID | HTTP 200，`id`、`status`，以及按状态提供的 `progress`、`result` 或 `error` |
 
 上传 ID 可提交一次。任务依次运行，状态为 `queued`、`running`、`completed` 或 `failed`。进度格式为 `{ "stage": "transcribing", "fraction": 0.5 }`，比例以当前阶段为准。成功的 `result` 与命令行 JSON 一致。失败任务和 HTTP 错误均使用 `error.code` 和 `error.message`。
@@ -67,3 +67,8 @@ npm start
 网页编辑使用 [alphaTab](https://github.com/CoderLine/alphaTab) 的谱面模型与 Guitar Pro 7 导出器。编辑流程参考了 [TaBello 的源码](https://github.com/JackF007/taBello/blob/73358c05de2b1bf4a5b47c610fe29cd18fefb94e/src/renderer/src/lib/music/edit.ts)。[TuxGuitar](https://github.com/helge17/tuxguitar) 可作为独立的桌面制谱工具。
 
 「保存项目」下载 `.geota` 文件，包含修改后的谱面、原录音与小节同步信息。刷新或重启后点击「打开项目」即可继续编辑和练习，原录音随项目恢复。项目文件可以包含完整的原始 MP3。撤销历史仅保存在当前页面，重开项目从已保存的版本开始。
+
+
+## 生成简化伴奏谱
+
+网页默认生成「简化伴奏谱」。它使用检测到的和弦在较低把位编排分解和弦或扫弦，和弦图放在相应拍位上方，并保留原有小节时间用于原音同步。缺少可用和弦指法的片段会保留原谱的吉他上声部。也可切换到「原音扒谱」查看识别出的指法；通过谱面上方的复选框可以显示数字简谱。该模式针对练习重新编配，和弦和节奏仍可与参考谱有差异。

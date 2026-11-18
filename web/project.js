@@ -11,6 +11,8 @@ export function saveProject(score, audio, timing) {
     audioName: audio?.name,
     startTime: timing?.startTime,
     barTimes: timing?.barTimes,
+    mode: timing?.mode,
+    showNumbered: timing?.showNumbered,
   })]);
   if (metadata.size > maxMetadata || (audio?.size ?? 0) > maxAudio) {
     throw new Error('项目超过可保存的大小。');
@@ -29,18 +31,22 @@ export async function openProject(file) {
   const audioLength = file.size - audioOffset;
   if (audioLength < 0 || audioLength > maxAudio) throw invalid();
   try {
-    const { score: scoreJson, audioName, startTime, barTimes } =
+    const { score: scoreJson, audioName, startTime, barTimes, mode, showNumbered } =
       JSON.parse(await file.slice(headerLength, audioOffset).text());
     const score = model.JsonConverter.jsonToScore(scoreJson);
     if (!score.tracks.length) throw invalid();
-    if (audioLength === 0) return { score };
+    const preferences = {
+      ...(mode === 'accompaniment' ? { mode } : {}),
+      ...(typeof showNumbered === 'boolean' ? { showNumbered } : {}),
+    };
+    if (audioLength === 0) return { score, timing: preferences };
     if (typeof audioName !== 'string' || !Number.isFinite(startTime) ||
         !Array.isArray(barTimes) || barTimes.length !== score.masterBars.length + 1 ||
         barTimes.some((time, index) => !Number.isFinite(time) || (index && time <= barTimes[index - 1]))) {
       throw invalid();
     }
     const audio = new File([file.slice(audioOffset)], audioName, { type: 'audio/mpeg' });
-    return { score, audio, timing: { startTime, barTimes } };
+    return { score, audio, timing: { startTime, barTimes, ...preferences } };
   } catch {
     throw invalid();
   }

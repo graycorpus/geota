@@ -1,6 +1,6 @@
 import { model } from '@coderline/alphatab';
 
-export function applyGuitarLayout(score, settings) {
+export function applyGuitarLayout(score, settings, showNumbered = true) {
   score.stylesheet.globalDisplayChordDiagramsOnTop = false;
   score.stylesheet.globalDisplayChordDiagramsInScore = true;
 
@@ -14,7 +14,7 @@ export function applyGuitarLayout(score, settings) {
     const numbered = new model.Staff();
     numbered.showStandardNotation = false;
     numbered.showTablature = false;
-    numbered.showNumbered = true;
+    numbered.showNumbered = showNumbered;
     track.addStaff(numbered);
 
     let previousNote;

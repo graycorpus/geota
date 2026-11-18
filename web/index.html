@@ -23,6 +23,12 @@
               <span class="file-limit">单个文件 · 最多 25 MiB</span>
               <input id="audio-file" name="audio" type="file" accept=".mp3,audio/mpeg">
             </label>
+            <label class="generation-mode">生成方式
+              <select id="score-mode">
+                <option value="accompaniment">简化伴奏谱</option>
+                <option value="transcription">原音扒谱</option>
+              </select>
+            </label>
             <button class="primary" id="generate" type="submit" disabled>生成吉他谱</button>
           </form>
           <div class="feedback">
@@ -61,6 +67,7 @@
           <input id="project-input" type="file" accept=".geota" hidden>
           <button class="secondary" id="project-open" type="button">打开项目</button>
           <button class="secondary" id="project-save" type="button" hidden>保存项目</button>
+          <label class="track-control" id="numbered-control" hidden><input type="checkbox" id="show-numbered">显示数字简谱</label>
           <button class="secondary" id="edit-score" type="button" aria-controls="score-editor" aria-expanded="false" hidden>编辑曲谱</button>
           <button class="secondary" id="load-demo" type="button">查看示例谱</button>
         </header>

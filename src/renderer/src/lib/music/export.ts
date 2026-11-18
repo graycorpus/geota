@@ -16,6 +16,7 @@ export interface ScoreHeader {
   capo?: number;
   /** Write chord names above the staff, with their diagrams (default true). */
   chords?: boolean;
+  mode?: 'transcription' | 'accompaniment';
 }
 
 function quote(text: string): string {
@@ -46,6 +47,7 @@ function beatToAlphaTex(beat: TabBeat, stringCount: number, chord: ChordLabel | 
   const effects = [
     ...(beat.dotted ? ['d'] : []),
     ...(beat.tuplet ? ['tu 3'] : []),
+    ...(beat.brush ? [beat.brush] : []),
     ...(chord ? [`ch ${quote(chord.name)}`] : []),
   ];
   const suffix = `.${beat.value}${effects.length > 0 ? `{${effects.join(' ')}}` : ''}`;
@@ -85,6 +87,7 @@ export function chordLabels(
   capo: number,
   flats: boolean,
   withBass = true,
+  simple = false,
 ): (ChordLabel | null)[][] {
   const ticks = meterTicks(arrangement.meter);
   const pitchClass = (pitch: number) => (((pitch - capo) % 12) + 12) % 12;
@@ -232,9 +235,9 @@ export function chordLabels(
       const fretted = notes.filter((n) => n.fret > 0).map((n) => n.fret);
       return notes.length >= 3 && notes.every((n) => tones.includes(pitchClass(n.pitch))) && (fretted.length === 0 || Math.max(...fretted) - Math.min(...fretted) <= 4);
     });
-    let shape = strum ? tuning.map((_, string) => strum.find((n) => n.string === string)?.fret ?? null) : shapes.get(name);
+    let shape = !simple && strum ? tuning.map((_, string) => strum.find((n) => n.string === string)?.fret ?? null) : shapes.get(name);
     if (!shape) {
-      shape = chordVoicing({ root: chord.root, intervals: chord.intervals, bass: withBass ? (chord.bass ?? chord.root) : -1, tuning, frets }) ?? tuning.map(() => null);
+      shape = chordVoicing({ root: chord.root, intervals: chord.intervals, bass: withBass ? (chord.bass ?? chord.root) : -1, tuning, frets: simple ? Math.min(7, frets - capo) : frets }) ?? tuning.map(() => null);
       shapes.set(name, shape);
     }
     // alphaTex lists frets from the 1st (highest) string down.
@@ -266,7 +269,7 @@ export function chordLabels(
       if (first && second && first.root !== second.root && !within(second, first) && !within(first, second)) segments = [first, second];
     }
     for (const segment of segments) {
-      if (segment.name === previous) continue;
+      if (!simple && segment.name === previous) continue;
       previous = segment.name;
       labels[segment.at] = { name: segment.name, frets: segment.frets };
     }
@@ -317,15 +320,83 @@ export function tempoMarks(arrangement: Arrangement): TempoMark[] {
   return marks;
 }
 
+const SIMPLE_PULSES = [
+  { ticks: 12, value: 4, tuplet: false },
+  { ticks: 6, value: 8, tuplet: false },
+  { ticks: 4, value: 8, tuplet: true },
+  { ticks: 3, value: 16, tuplet: false },
+] as const;
+
+function accompanimentBars(arrangement: Arrangement, labels: (ChordLabel | null)[][], header: ScoreHeader) {
+  let simplifiedBars = 0;
+  const bars = arrangement.bars.map((original, bar) => {
+    const startPoints = labels[bar].flatMap((chord, index) => chord ? [index] : []);
+    const beats = original.map(beat => ({ ...beat, notes: beat.notes.map(note => ({ ...note, tied: false })) }));
+    if (!startPoints.length || beats.every(beat => !beat.notes.length)) return { beats, chords: labels[bar] };
+
+    const chords: (ChordLabel | null)[] = labels[bar].slice(0, startPoints[0]);
+    const output: TabBeat[] = beats.slice(0, startPoints[0]);
+    const strum = original.filter(beat => beat.notes.filter(note => !note.tied).length >= 3).length >= 2;
+    let simplified = false;
+    for (const [segment, start] of startPoints.entries()) {
+      const chord = labels[bar][start]!;
+      const span = beats.slice(start, startPoints[segment + 1]);
+      const ticks = span.reduce((sum, beat) => sum + beatTicks(beat), 0);
+      const shape: PlacedNote[] = [];
+      for (const [string, fret] of [...chord.frets].reverse().entries()) {
+        if (fret !== null) shape.push({
+          string, fret, pitch: header.tuning[string] + (header.capo ?? 0) + fret, tied: false, sources: [],
+        });
+      }
+
+      // Find a simple rhythm that fills exactly the original span, including pickup bars.
+      const pulses = SIMPLE_PULSES.filter(pulse =>
+        (strum || pulse.value !== 4) && (arrangement.meter.tuplets ? pulse.tuplet || pulse.value === 4 : !pulse.tuplet));
+      const grid: (typeof pulses | undefined)[] = [[]];
+      for (let length = 1; length <= ticks; length++) {
+        const pulse = pulses.find(candidate => grid[length - candidate.ticks]);
+        if (pulse) grid[length] = [pulse, ...grid[length - pulse.ticks]!];
+      }
+      const rhythm = grid[ticks];
+      if (shape.length < 2 || !rhythm) {
+        output.push(...span);
+        chords.push(...span.map((_, index) => index === 0 ? chord : null));
+        continue;
+      }
+
+      simplified = true;
+      const picking = [0, 1, shape.length - 1, Math.max(1, shape.length - 2)];
+      for (const [index, pulse] of rhythm.entries()) {
+        output.push({
+          notes: strum ? shape : [shape[picking[index % picking.length]]],
+          value: pulse.value, dotted: false, tuplet: pulse.tuplet,
+          ...(strum && shape.length >= 3 ? { brush: index % 2 ? 'bu' : 'bd' } : {}),
+        });
+        chords.push(index === 0 ? chord : null);
+      }
+    }
+    if (simplified) simplifiedBars++;
+    return { beats: output, chords };
+  });
+  return { bars, simplifiedBars };
+}
+
 /** Renders an arrangement as alphaTex: standard notation plus tablature, one track. */
 export function toAlphaTex(arrangement: Arrangement, header: ScoreHeader): string {
   const { instrument, key, capo = 0 } = header;
   const { meter } = arrangement;
   const stringCount = header.tuning.length;
-  const labels =
+  let labels =
     header.chords === false
       ? arrangement.bars.map((beats) => beats.map(() => null))
-      : chordLabels(arrangement, header.tuning, instrument.frets, capo, makeFlats(key, capo), instrument.id !== 'ukulele');
+      : chordLabels(arrangement, header.tuning, instrument.frets, capo, makeFlats(key, capo), instrument.id !== 'ukulele', header.mode === 'accompaniment');
+  if (header.mode === 'accompaniment') {
+    const simplified = accompanimentBars(arrangement, labels, header);
+    if (simplified.simplifiedBars > 0) {
+      arrangement = { ...arrangement, bars: simplified.bars.map(bar => bar.beats), bass: undefined };
+      labels = simplified.bars.map(bar => bar.chords);
+    }
+  }
   // One diagram per chord name: the first voicing used.
   const diagrams = new Map<string, ChordLabel>();
   for (const label of labels.flat()) if (label && !diagrams.has(label.name)) diagrams.set(label.name, label);
@@ -338,7 +409,7 @@ export function toAlphaTex(arrangement: Arrangement, header: ScoreHeader): strin
     `\\tempo ${initial?.bpm ?? Math.round(header.bpm * meter.quartersPerBeat)}`,
     '.',
     `\\track ${quote(instrument.name)}`,
-    '\\staff {score tabs}',
+    header.mode === 'accompaniment' ? '\\staff {tabs}' : '\\staff {score tabs}',
     `\\instrument ${instrument.alphaTexInstrument}`,
     `\\tuning ${[...header.tuning].reverse().map(alphaTexPitch).join(' ')}`,
     ...(capo ? [`\\capo ${capo}`] : []),

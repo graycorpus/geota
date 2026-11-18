@@ -39,6 +39,7 @@ export interface PlacedNote {
 export type NoteValue = 1 | 2 | 4 | 8 | 16;
 
 export interface TabBeat {
+  brush?: 'bd' | 'bu';
   /** Empty for a rest. */
   notes: PlacedNote[];
   value: NoteValue;
