@@ -81,6 +81,8 @@
           </label>
           <input id="project-input" type="file" accept=".geota" hidden>
           <button class="secondary" id="project-open" type="button">打开项目</button>
+          <button class="primary score-download" id="score-download" type="button" hidden>下载曲谱（.gp）</button>
+          <button class="secondary" id="score-print" type="button" hidden>打印 / 保存 PDF</button>
           <button class="secondary" id="project-save" type="button" hidden>保存项目</button>
           <label class="track-control" id="numbered-control" hidden><input type="checkbox" id="show-numbered">显示数字简谱</label>
           <button class="secondary" id="edit-score" type="button" aria-controls="score-editor" aria-expanded="false" hidden>编辑曲谱</button>
@@ -101,7 +103,6 @@
             <button class="secondary" id="edit-delete" type="button">删除音符</button>
             <button class="secondary" id="edit-undo" type="button">撤销</button>
             <button class="secondary" id="edit-redo" type="button">重做</button>
-            <button class="secondary" id="edit-export" type="button">导出 Guitar Pro</button>
           </div>
           <p id="edit-message" role="status"></p>
         </section>

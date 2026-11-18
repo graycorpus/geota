@@ -1,4 +1,4 @@
-import { exporter, model, Settings } from '@coderline/alphatab';
+import { model } from '@coderline/alphatab';
 import { editNote, getBeat } from './score-edit.js';
 
 const { scoreToJsObject, jsObjectToScore } = model.JsonConverter;
@@ -107,21 +107,6 @@ export function createEditor(render) {
     panel.hidden = !panel.hidden;
     toggle.setAttribute('aria-expanded', String(!panel.hidden));
     if (!panel.hidden) refresh();
-  });
-
-  el('edit-export').addEventListener('click', () => {
-    try {
-      const data = new exporter.Gp7Exporter().export(score, new Settings());
-      const url = URL.createObjectURL(new Blob([data], { type: 'application/octet-stream' }));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = (score.title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').trim() || '吉他谱') + '.gp';
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      message.textContent = '已导出 Guitar Pro 曲谱';
-    } catch {
-      message.textContent = '曲谱导出失败，请重试。';
-    }
   });
 
   return {

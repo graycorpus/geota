@@ -2,6 +2,7 @@ import { AlphaTabApi, FontFileFormat, PlayerMode, ScrollMode, Settings, StavePro
 import bravura from '@coderline/alphatab/font/Bravura.woff2?url';
 import { createGuitarPlayer } from './guitar-player.js';
 import { openProject, saveProject } from './project.js';
+import { downloadGuitarPro } from './score-download.js';
 import { createEditor } from './editor.js';
 import { applyGuitarLayout } from './score-layout.js';
 import { validRepeat } from './repeat.js';
@@ -16,6 +17,8 @@ const generate = $('generate');
 const demo = $('load-demo');
 const projectInput = $('project-input');
 const projectSave = $('project-save');
+const scoreDownload = $('score-download');
+const scorePrint = $('score-print');
 const mode = $('score-mode');
 const showNumbered = $('show-numbered');
 const status = $('status');
@@ -192,7 +195,7 @@ function presentScore(nextScore, file, timing) {
   editor.load(nextScore);
   projectAudio = file;
   projectTiming = timing;
-  projectSave.hidden = false;
+  projectSave.hidden = scoreDownload.hidden = scorePrint.hidden = false;
   showNumbered.checked = timing?.showNumbered ?? (timing?.mode !== 'accompaniment');
   $('numbered-control').hidden = false;
   applyGuitarLayout(nextScore, settings, showNumbered.checked);
@@ -293,6 +296,23 @@ projectInput.addEventListener('change', async () => {
     generate.disabled = !selectedFile;
   }
 });
+scoreDownload.addEventListener('click', () => {
+  try {
+    downloadGuitarPro(editor.currentScore(), scoreRepeat);
+    updateStatus('已发起曲谱下载');
+  } catch {
+    reportError('曲谱下载失败，请重试。');
+  }
+});
+
+scorePrint.addEventListener('click', () => {
+  try {
+    api.print('190mm', { core: { useWorkers: false } });
+  } catch {
+    reportError('无法打开打印预览，请允许此站点弹出窗口后重试。');
+  }
+});
+
 projectSave.addEventListener('click', () => {
   try {
     const editableScore = editor.currentScore();
