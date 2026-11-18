@@ -9,7 +9,7 @@
   },
   "scripts": {
     "analyze": "vite-node --script src/cli.ts",
-    "test": "node --test test/cli.test.mjs test/api.test.mjs test/score-edit.test.mjs",
+    "test": "node --test test/cli.test.mjs test/api.test.mjs test/score-edit.test.mjs test/project.test.mjs",
     "start": "node src/server.mjs",
     "dev:web": "vite --config vite.web.config.mjs",
     "build:web": "vite build --config vite.web.config.mjs"

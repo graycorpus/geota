@@ -65,3 +65,5 @@ npm start
 编辑保留原有节奏网格，方便继续跟随原录音。数字简谱会随音符更新，和弦标记来自原始识别结果。编辑历史保留到切换曲谱或刷新前。点击「导出 Guitar Pro」将修改后的谱保存为 `.gp` 文件。
 
 网页编辑使用 [alphaTab](https://github.com/CoderLine/alphaTab) 的谱面模型与 Guitar Pro 7 导出器。编辑流程参考了 [TaBello 的源码](https://github.com/JackF007/taBello/blob/73358c05de2b1bf4a5b47c610fe29cd18fefb94e/src/renderer/src/lib/music/edit.ts)。[TuxGuitar](https://github.com/helge17/tuxguitar) 可作为独立的桌面制谱工具。
+
+「保存项目」下载 `.geota` 文件，包含修改后的谱面、原录音与小节同步信息。刷新或重启后点击「打开项目」即可继续编辑和练习，原录音随项目恢复。项目文件可以包含完整的原始 MP3。撤销历史仅保存在当前页面，重开项目从已保存的版本开始。

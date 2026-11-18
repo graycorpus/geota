@@ -125,9 +125,10 @@ export function createEditor(render) {
   });
 
   return {
+    currentScore() { return score; },
     load(rawScore) {
-      score = rawScore;
-      history = [scoreToJsObject(score)];
+      history = [scoreToJsObject(rawScore)];
+      score = jsObjectToScore(history[0]);
       index = track = 0;
       panel.hidden = true;
       toggle.hidden = false;

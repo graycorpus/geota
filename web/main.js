@@ -1,5 +1,6 @@
 import { AlphaTabApi, FontFileFormat, PlayerMode, ScrollMode, Settings, StaveProfile, TabRhythmMode, importer } from '@coderline/alphatab';
 import bravura from '@coderline/alphatab/font/Bravura.woff2?url';
+import { openProject, saveProject } from './project.js';
 import { createEditor } from './editor.js';
 import { applyGuitarLayout } from './score-layout.js';
 import { connectPlayback } from './playback.js';
@@ -11,6 +12,8 @@ const input = $('audio-file');
 const drop = input.parentElement;
 const generate = $('generate');
 const demo = $('load-demo');
+const projectInput = $('project-input');
+const projectSave = $('project-save');
 const status = $('status');
 const progress = $('progress');
 const errorBox = $('error');
@@ -64,6 +67,8 @@ let score;
 let audioUrl;
 let disconnectPlayback;
 let barTimes = [];
+let projectAudio;
+let projectTiming;
 const editor = createEditor((nextScore, track) => {
   const position = audio.currentTime;
   audio.pause();
@@ -137,9 +142,16 @@ function showScore(tex, file, timing) {
   const parser = new importer.AlphaTexImporter();
   const settings = new Settings();
   parser.initFromString(tex, settings);
-  const nextScore = parser.readScore();
+  presentScore(parser.readScore(), file, timing);
+}
+
+function presentScore(nextScore, file, timing) {
+  const settings = new Settings();
   if (!nextScore.tracks.length) throw new Error('曲谱没有可显示的音轨。');
   editor.load(nextScore);
+  projectAudio = file;
+  projectTiming = timing;
+  projectSave.hidden = false;
   applyGuitarLayout(nextScore, settings);
 
   empty.hidden = true;
@@ -216,6 +228,38 @@ async function generateScore(file) {
   }
 }
 
+$('project-open').addEventListener('click', () => projectInput.click());
+projectInput.addEventListener('change', async () => {
+  const file = projectInput.files[0];
+  projectInput.value = '';
+  if (!file || busy) return;
+  $('project-open').disabled = input.disabled = generate.disabled = demo.disabled = busy = true;
+  try {
+    const project = await openProject(file);
+    presentScore(project.score, project.audio, project.timing);
+    updateStatus('项目已打开');
+  } catch (error) {
+    reportError(error.message);
+  } finally {
+    $('project-open').disabled = input.disabled = demo.disabled = busy = false;
+    generate.disabled = !selectedFile;
+  }
+});
+projectSave.addEventListener('click', () => {
+  try {
+    const editableScore = editor.currentScore();
+    const data = saveProject(editableScore, projectAudio, projectTiming);
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(data);
+    link.download = (editableScore.title.replace(/[<>:"/\\|?*]/g, '_').trim() || '吉他谱') + '.geota';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    updateStatus('已发起项目下载');
+  } catch (error) {
+    reportError(error.message);
+  }
+});
+
 input.addEventListener('change', () => selectFile(input.files[0]));
 drop.addEventListener('dragover', event => {
   event.preventDefault();
@@ -260,7 +304,7 @@ form.addEventListener('submit', async event => {
   event.preventDefault();
   if (!selectedFile || busy) return;
   const file = selectedFile;
-  busy = input.disabled = generate.disabled = demo.disabled = true;
+  busy = input.disabled = generate.disabled = demo.disabled = $('project-open').disabled = true;
   try {
     const result = await generateScore(file);
     showScore(result.alphaTex, file, result);
@@ -268,6 +312,6 @@ form.addEventListener('submit', async event => {
   } catch (error) {
     reportError(error.message);
   } finally {
-    busy = input.disabled = generate.disabled = demo.disabled = false;
+    busy = input.disabled = generate.disabled = demo.disabled = $('project-open').disabled = false;
   }
 });
