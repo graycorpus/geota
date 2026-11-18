@@ -81,7 +81,13 @@
           </label>
           <input id="project-input" type="file" accept=".geota" hidden>
           <button class="secondary" id="project-open" type="button">打开项目</button>
-          <button class="primary score-download" id="score-download" type="button" hidden>下载曲谱（.gp）</button>
+          <div class="score-download-controls" id="score-download-controls" hidden>
+            <select id="score-download-format" aria-label="下载曲谱格式">
+              <option value="gp">Guitar Pro (.gp)</option>
+              <option value="pdf">PDF (.pdf)</option>
+            </select>
+            <button class="primary score-download" id="score-download" type="button">下载曲谱</button>
+          </div>
           <button class="secondary" id="score-print" type="button" hidden>打印 / 保存 PDF</button>
           <button class="secondary" id="project-save" type="button" hidden>保存项目</button>
           <label class="track-control" id="numbered-control" hidden><input type="checkbox" id="show-numbered">显示数字简谱</label>

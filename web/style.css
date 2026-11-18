@@ -89,3 +89,4 @@ select { max-width: min(200px, 55vw); min-height: 40px; padding: 6px 8px; }
 #guitar-status:not(:empty) { margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 
 .score-toolbar .score-download { width: auto; margin: 0; }
+.score-download-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
