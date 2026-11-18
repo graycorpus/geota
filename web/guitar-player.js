@@ -1,4 +1,5 @@
 import { guitarTracks } from './guitar-tracks.js';
+import samplesUrl from './assets/guitar-samples.wav?url';
 
 export function createGuitarPlayer(original) {
   const panel = document.getElementById('guitar-player');
@@ -11,7 +12,8 @@ export function createGuitarPlayer(original) {
     volume: document.getElementById(name + '-volume'),
   }]));
   let context;
-  let wave;
+  let samples;
+  let sampleRequest;
   let cached;
   let duration = 0;
   let position = 0;
@@ -37,9 +39,9 @@ export function createGuitarPlayer(original) {
     if (playing) position = Math.min(duration, Math.max(0, context.currentTime - startedAt));
     playing = false;
     clearInterval(timer);
-    for (const oscillator of active) {
-      oscillator.disconnect();
-      oscillator.stop();
+    for (const source of active) {
+      source.disconnect();
+      source.stop();
     }
     active.clear();
     play.textContent = '播放吉他谱';
@@ -54,8 +56,6 @@ export function createGuitarPlayer(original) {
 
   function prepareAudio() {
     context = new AudioContext();
-    const harmonics = Float32Array.from([0, 1, 0.38, 0.26, 0.17, 0.12, 0.09, 0.06]);
-    wave = context.createPeriodicWave(new Float32Array(harmonics.length), harmonics);
     const mixer = context.createDynamicsCompressor();
     mixer.connect(context.destination);
     for (const channel of Object.values(channels)) {
@@ -66,22 +66,45 @@ export function createGuitarPlayer(original) {
     }
   }
 
+  async function loadSamples() {
+    if (samples) return;
+    sampleRequest ??= (async () => {
+      const response = await fetch(samplesUrl);
+      if (!response.ok) throw new Error('Missing guitar samples');
+      const bank = await context.decodeAudioData(await response.arrayBuffer());
+      const frameCount = bank.sampleRate * 2;
+      const data = bank.getChannelData(0);
+      samples = Array.from({ length: 13 }, (_, index) => {
+        const sample = context.createBuffer(1, frameCount, bank.sampleRate);
+        sample.copyToChannel(data.subarray(index * frameCount, (index + 1) * frameCount), 0);
+        return sample;
+      });
+    })().finally(() => { sampleRequest = undefined; });
+    await sampleRequest;
+  }
+
   function pluck(note) {
     const at = Math.max(context.currentTime, startedAt + note.start);
     const length = Math.min(4, note.duration);
+    const index = Math.max(0, Math.min(samples.length - 1, Math.round((note.pitch - 40) / 4)));
+    const rate = 2 ** ((note.pitch - (40 + index * 4)) / 12);
+    const source = context.createBufferSource();
+    source.buffer = samples[index];
+    source.playbackRate.value = rate;
+    source.detune.setValueAtTime(note.pitchChanges[0]?.offset === 0 ? note.pitchChanges[0].cents : 0, at);
+    for (const point of note.pitchChanges) {
+      if (point.offset > 0 && point.offset < length) source.detune.linearRampToValueAtTime(point.cents, at + point.offset);
+    }
     const gain = context.createGain();
-    const oscillator = context.createOscillator();
-    oscillator.setPeriodicWave(wave);
-    oscillator.frequency.value = 440 * 2 ** ((note.pitch - 69) / 12);
-    const level = (0.035 + Math.min(1, Math.max(0, note.velocity)) * 0.07);
-    gain.gain.setValueAtTime(0, at);
-    gain.gain.linearRampToValueAtTime(level, at + 0.004);
-    gain.gain.exponentialRampToValueAtTime(0.0001, at + length + 0.08);
-    oscillator.connect(gain).connect(channels[note.track].gain);
-    oscillator.onended = () => { active.delete(oscillator); oscillator.disconnect(); gain.disconnect(); };
-    active.add(oscillator);
-    oscillator.start(at);
-    oscillator.stop(at + length + 0.09);
+    const level = 0.08 + Math.min(1, Math.max(0, note.velocity)) * 0.62;
+    gain.gain.setValueAtTime(level, at);
+    gain.gain.setValueAtTime(level, at + length);
+    gain.gain.linearRampToValueAtTime(0, at + length + 0.04);
+    source.connect(gain).connect(channels[note.track].gain);
+    source.onended = () => { active.delete(source); source.disconnect(); gain.disconnect(); };
+    active.add(source);
+    source.start(at);
+    source.stop(at + length + 0.05);
   }
 
   function tick() {
@@ -110,7 +133,7 @@ export function createGuitarPlayer(original) {
       }
       if (!context) prepareAudio();
       original.pause();
-      await context.resume();
+      await Promise.all([context.resume(), loadSamples()]);
       if (attempt !== sequence) return;
       if (position >= duration) position = 0;
       nextNote = cached.events.findIndex(note => note.start >= position - 0.001);
@@ -121,6 +144,7 @@ export function createGuitarPlayer(original) {
       tick();
       timer = setInterval(tick, 30);
     } catch {
+      if (attempt !== sequence) return;
       stop();
       status.textContent = '无法播放吉他谱，请重试。';
     }
@@ -142,9 +166,9 @@ export function createGuitarPlayer(original) {
   });
 
   return {
-    load(score, track) {
+    load(score, track, repeat) {
       stop();
-      cached = guitarTracks(score, track);
+      cached = guitarTracks(score, track, repeat);
       duration = cached.duration;
       position = 0;
       seek.max = String(duration);

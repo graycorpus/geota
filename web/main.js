@@ -111,7 +111,7 @@ function refreshRepeatControls() {
 const editor = createEditor((nextScore, track) => {
   const position = audio.currentTime;
   audio.pause();
-  guitarPlayer.load(nextScore, track);
+  guitarPlayer.load(nextScore, track, scoreRepeat);
   applyGuitarLayout(nextScore, new Settings(), showNumbered.checked);
   score = nextScore;
   api.renderScore(score, [track]);
@@ -190,7 +190,6 @@ function presentScore(nextScore, file, timing) {
   const settings = new Settings();
   if (!nextScore.tracks.length) throw new Error('曲谱没有可显示的音轨。');
   editor.load(nextScore);
-  guitarPlayer.load(editor.currentScore(), 0);
   projectAudio = file;
   projectTiming = timing;
   projectSave.hidden = false;
@@ -206,6 +205,7 @@ function presentScore(nextScore, file, timing) {
   setBarTimes(timing?.barTimes);
   scoreRepeat = validRepeat(timing?.repeat, barTimes.length - 1) ? timing.repeat : undefined;
   refreshRepeatControls();
+  guitarPlayer.load(editor.currentScore(), 0, scoreRepeat);
   audio.preservesPitch = true;
   audio.playbackRate = 1;
   api = new AlphaTabApi(scoreElement, {
@@ -351,18 +351,20 @@ $('repeat-apply').addEventListener('click', () => {
     return;
   }
   scoreRepeat = repeat;
+  guitarPlayer.load(editor.currentScore(), Number(tracks.value), scoreRepeat);
   drawRepeat();
   refreshRepeatControls();
 });
 repeatRemove.addEventListener('click', () => {
   scoreRepeat = undefined;
+  guitarPlayer.load(editor.currentScore(), Number(tracks.value));
   drawRepeat();
   refreshRepeatControls();
 });
 tracks.addEventListener('change', () => {
   const track = Number(tracks.value);
   editor.setTrack(track);
-  guitarPlayer.load(editor.currentScore(), track);
+  guitarPlayer.load(editor.currentScore(), track, scoreRepeat);
   api.renderTracks([score.tracks[track]]);
 });
 demo.addEventListener('click', () => {
