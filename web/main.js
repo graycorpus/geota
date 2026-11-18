@@ -1,5 +1,6 @@
 import { AlphaTabApi, FontFileFormat, PlayerMode, ScrollMode, Settings, StaveProfile, TabRhythmMode, importer } from '@coderline/alphatab';
 import bravura from '@coderline/alphatab/font/Bravura.woff2?url';
+import { createGuitarPlayer } from './guitar-player.js';
 import { openProject, saveProject } from './project.js';
 import { createEditor } from './editor.js';
 import { applyGuitarLayout } from './score-layout.js';
@@ -25,6 +26,7 @@ const empty = $('empty-state');
 const tracks = $('track-select');
 const audio = $('original-audio');
 const audioSection = $('audio-section');
+const guitarPlayer = createGuitarPlayer(audio);
 const speed = $('playback-speed');
 const loopStart = $('loop-start');
 const loopEnd = $('loop-end');
@@ -109,6 +111,7 @@ function refreshRepeatControls() {
 const editor = createEditor((nextScore, track) => {
   const position = audio.currentTime;
   audio.pause();
+  guitarPlayer.load(nextScore, track);
   applyGuitarLayout(nextScore, new Settings(), showNumbered.checked);
   score = nextScore;
   api.renderScore(score, [track]);
@@ -187,6 +190,7 @@ function presentScore(nextScore, file, timing) {
   const settings = new Settings();
   if (!nextScore.tracks.length) throw new Error('曲谱没有可显示的音轨。');
   editor.load(nextScore);
+  guitarPlayer.load(editor.currentScore(), 0);
   projectAudio = file;
   projectTiming = timing;
   projectSave.hidden = false;
@@ -358,6 +362,7 @@ repeatRemove.addEventListener('click', () => {
 tracks.addEventListener('change', () => {
   const track = Number(tracks.value);
   editor.setTrack(track);
+  guitarPlayer.load(editor.currentScore(), track);
   api.renderTracks([score.tracks[track]]);
 });
 demo.addEventListener('click', () => {

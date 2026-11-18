@@ -36,6 +36,21 @@
             <progress id="progress" max="1" aria-label="当前阶段进度" hidden></progress>
             <p id="error" role="alert" hidden></p>
           </div>
+          <section class="audio-section" id="guitar-player" aria-labelledby="guitar-heading" hidden>
+            <h2 id="guitar-heading">吉他谱试听</h2>
+            <div class="guitar-transport">
+              <button class="primary" id="guitar-play" type="button">播放吉他谱</button>
+              <input id="guitar-seek" type="range" min="0" max="0" step="0.01" value="0" aria-label="吉他谱进度">
+              <span id="guitar-position"></span>
+            </div>
+            <div class="guitar-mixer">
+              <label><input id="melody-enabled" type="checkbox" checked> 旋律</label>
+              <input id="melody-volume" type="range" min="0" max="100" value="85" aria-label="旋律音量">
+              <label><input id="backing-enabled" type="checkbox" checked> 伴奏</label>
+              <input id="backing-volume" type="range" min="0" max="100" value="70" aria-label="伴奏音量">
+            </div>
+            <p id="guitar-status" role="status"></p>
+          </section>
           <section class="audio-section" id="audio-section" aria-labelledby="audio-heading" hidden>
             <h2 id="audio-heading">原始录音</h2>
             <audio id="original-audio" controls preload="metadata" aria-label="原始录音"></audio>

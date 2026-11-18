@@ -80,3 +80,10 @@ select { max-width: min(200px, 55vw); min-height: 40px; padding: 6px 8px; }
 
 .generation-mode { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; color: var(--muted); font-size: 14px; }
 .generation-mode select { max-width: 100%; }
+
+.guitar-transport { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 8px; }
+.guitar-transport button { grid-column: 1 / -1; }
+.guitar-transport span { color: var(--muted); font-size: 12px; }
+.guitar-mixer { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; margin-top: 10px; font-size: 14px; }
+.guitar-transport input, .guitar-mixer input { min-width: 0; accent-color: var(--accent); }
+#guitar-status:not(:empty) { margin-top: 8px; color: var(--muted); font-size: 12px; line-height: 1.5; }
